@@ -6,6 +6,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/) | Versioning: [SemVer](h
 See [docs/changelog-guide.md](docs/changelog-guide.md) for conventions. Every version below has
 a matching `vX.Y.Z` git tag; install one with `pi install git:github.com/Narmo/godot-skills@vX.Y.Z`.
 
+## [2.0.1] — 2026-11-19
+
+### Removed
+- GitHub Actions CI (`.github/workflows/ci.yml`) and the `scripts/verify.sh` check for it; run `bash scripts/verify.sh` locally before tagging a release
+
 ## [2.0.0] — 2026-11-19
 
 ### Changed

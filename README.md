@@ -12,7 +12,7 @@ A complete, distributable, open-source skill package providing domain knowledge,
 ```bash
 pi install git:github.com/Narmo/godot-skills
 # or pin a release (tags match CHANGELOG versions):
-pi install git:github.com/Narmo/godot-skills@v2.0.0
+pi install git:github.com/Narmo/godot-skills@v2.0.1
 ```
 
 ### Local development
