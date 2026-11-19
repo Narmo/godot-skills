@@ -7,7 +7,7 @@ actively maintained test framework with a headless CLI runner built for CI and a
 
 1. AssetLib → "gdUnit4" → Install (or add as git submodule under `addons/gdUnit4`)
 2. Enable the addon in Project Settings → Plugins
-3. Commit `addons/gdUnit4/` with the project so agents on fresh clones can run tests
+3. Keep `addons/gdUnit4/` under version control with the project so agents on fresh clones can run tests
 
 ## Layout
 

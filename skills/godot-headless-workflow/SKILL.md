@@ -62,7 +62,7 @@ export behavior are **identical across hosts** — projects stay fully portable.
 
 1. **Line endings kill `.sh` scripts**: if `verify.sh` is checked out with CRLF on Linux it
    fails with `$'\r': command not found`. Add to every game repo's `.gitattributes`:
-   `*.sh text eol=lf` (and commit it from day one).
+   `*.sh text eol=lf` (and keep it in the repo from day one).
 2. **Runner extension differs by host** — `runtest.cmd` on Windows, `runtest.sh` elsewhere;
    detect or parameterize instead of hardcoding one.
 3. **Don't mix toolchain worlds**: run Godot + Android SDK/adb **natively** per OS. Building
@@ -79,7 +79,7 @@ edit (.gd / .tscn / project settings)
   → parse check            (every changed script)
   → unit tests             (gdUnit4, see references/testing.md)
   → smoke run              (boot the game headlessly for N frames)
-  → commit                 (only when everything above exits 0)
+  → commit                 (only when the user asks, and only if everything above exits 0)
   → export                 (when feature-complete; see references/exporting.md)
 ```
 

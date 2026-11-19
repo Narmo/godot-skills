@@ -25,7 +25,7 @@ pragmatic path; budget a spike to validate it BEFORE building game systems on to
 
 1. AssetLib in-editor → "Godotx RevenueCat" → Install & Enable
    (or download release ZIP → copy `addons/`, `ios/plugins/`, `android/plugins/` into project root)
-2. Commit all three folders
+2. Keep all three folders under version control
 3. Run `godot --headless --path . --import` to regenerate cache
 
 ## Configure Export Presets
