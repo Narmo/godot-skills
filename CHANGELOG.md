@@ -1,21 +1,60 @@
 # Changelog
 
-All notable changes to @vl4dt/godot-skills.
+All notable changes to godot-skills.
 
 Format: [Keep a Changelog](https://keepachangelog.com/) | Versioning: [SemVer](https://semver.org/)
-See [docs/changelog-guide.md](docs/changelog-guide.md) for conventions.
+See [docs/changelog-guide.md](docs/changelog-guide.md) for conventions. Every version below has
+a matching `vX.Y.Z` git tag; install one with `pi install git:github.com/Narmo/godot-skills@vX.Y.Z`.
 
-## [Unreleased]
+## [2.0.0] — 2026-11-19
+
+### Changed
+- Fork maintained by Nikita Denin (narmo) at `github.com/Narmo/godot-skills`
+- Distribution is git only: `pi install git:github.com/Narmo/godot-skills`, with pi discovering skills from the conventional `skills/` directory. Releases are git tags
+- Skills checked against the Godot 4.7.2 engine and corrected where they used APIs that don't exist or describe them wrongly — most visibly `godot-networking` (Godot 4 has no `rset()`; replication is done with `MultiplayerSynchronizer` and `MultiplayerSpawner`), `godot-shaders-vfx` (Godot 4 shader syntax), `godot-performance`, `godot-physics`, `godot-ui`, `godot-i18n`, `godot-input`, `godot-animation`, `godot-audio`, `godot-save-systems`, `godot-inventory-economy`, `godot-dialog-systems`, `godot-state-management`, `godot-debugging`, `godot-csharp-patterns`, `godot-gdscript-patterns`, `godot-code-review` and `godot-47-migration`
+- Godot 4.7 features described as the release notes and the engine have them: `Tween.tween_await()` pauses a tween until a signal fires; Steam Frame is an XR headset; HDR output is `display/window/hdr/request_hdr_output`; `VirtualJoystick` presses input actions
+- `agents/openai.yaml` files use Codex's format (`interface`, `policy`)
+- `AGENTS.md` holds the repository rules; `CLAUDE.md` is a symlink to it
+
+### Removed
+- MCP bridge (`mcp-bridge/`): the server, its protocol and tool docs, client config templates, ADR-004, the CI build job, and the "MCP Bridge Tools" sections of the skills. It needed a Godot editor plugin that was never part of this repository
+- Root `package.json` — the `@vl4dt/godot-skills` npm name, the `pi-package` gallery keyword, and the `pi.skills` manifest that duplicated conventional discovery; npm publish, verify and unpublish steps from `docs/release-process.md`; the `package.json` checks in `scripts/validate-skills.sh`, `scripts/verify.sh` and `scripts/verify.ps1`
+- Beads issue tracking — `.beads/`, the generated `CLAUDE.md`, `.claude/settings.json` hooks running `bd prime`, the beads block in `AGENTS.md`, and the beads entries in `.gitignore`
+- `CONTEXT.md` — its repository rules moved into `AGENTS.md`; the rest duplicated README and CHANGELOG
+- `docs/specs/` — completed phase plans; the delivered work is in CHANGELOG and git history
+- Root `CODE_OF_CONDUCT.md` and the `CONTRIBUTING.md` redirect to `docs/contributing.md`
+- `.gdignore` files at the root of the example projects
+
+### Fixed
+- Example projects load and run in Godot 4.7.2: valid input maps in `project.godot`, working scenes and scripts; the multiplayer lobby connects two instances and starts the game
+- `scripts/new-godot-project.sh` — no `.gdignore` in `assets/` (it hid every asset from the editor), `.gitignore` no longer ignores `project.godot` or C# project files, the project name is filled in, window size uses `viewport_width`/`viewport_height`
+- `scripts/new-skill.sh` — title capitalization works with BSD/macOS sed; generated skills pass `lint-skills.sh` and `check-agent-extensions.sh`
+- `godot-headless-workflow` — Android signing variables are `GODOT_ANDROID_KEYSTORE_RELEASE_*`; AAB export needs `gradle_build/export_format`; the iOS export path is a file; gdUnit4 options and `GODOT_BIN`; the verify gate checks the right script paths; tool-built scenes set `owner`
+- Documentation: skill install commands copy the contents of `skills/`; Codex user skills live in `~/.agents/skills/`; the README lists every skill; dead and mislabeled links removed from `docs/ecosystem.md` and two skills
+
+### Security
+- `godot-inventory-economy` — loading an inventory resolves item ids through a fixed table instead of building a `load()` path from save data
+
+## [1.3.0] — 2026-11-19
 
 ### Added
-- `godot-headless-workflow` — Agent-first development loop: headless validation/import gates, gdUnit4 CLI testing, text-scene editing safety rules, CLI export pipeline with Android/iOS presets and signing env vars, store-submission checklist, and RevenueCat plugin integration playbook
 - `godot-pck-encryption` — Encrypted PCK exports: key handling, building export templates with `SCRIPT_AES256_ENCRYPTION_KEY` for every platform, preset encryption settings, filters that match the names Godot actually stores (`*.gd`/`*.tscn` encrypt nothing by default), CLI export with `GODOT_SCRIPT_ENCRYPTION_KEY`, template and PCK verification, and 4.7 error messages
-- `scripts/new-skill.sh` — Scaffold new skill directories from template
-- `docs/skill-template/` — Copy-paste skill template (SKILL.md, agents/, references/)
-- `docs/ecosystem.md` — Godot ecosystem integrations guide (20+ tools/plugins)
-- `docs/release-process.md` — Release checklist, npm publish steps, rollback procedure
-- `docs/changelog-guide.md` — Changelog format conventions and semver rules
+
+### Changed
+- Agent instructions no longer commit or push automatically
+
+## [1.2.1] — 2026-09-08
+
+### Added
 - `SECURITY.md` — Reporting process, MCP bridge threat model, and the Godot patterns treated as vulnerabilities here
+
+### Removed
+- Dangling `## References` sections from 20 skills — the linked files were never written. `scripts/verify.sh` now checks that reference links resolve instead of requiring a `references/` directory, so a skill may ship without one
+
+### Fixed
+- `scripts/new-skill.sh` — escape the description before using it as a `sed` replacement
+- `godot-save-systems` — `Error.CANT_OPEN` corrected to `Error.ERR_FILE_CANT_OPEN`, which is the enum that actually exists
+- `zod` declared explicitly instead of being hoisted from the MCP SDK as a phantom dependency
 
 ### Security
 - MCP bridge validates every path-carrying RPC parameter in one place. `res://` is not a sandbox on its own: Godot resolves `res://../..` and absolute host paths outside the project
@@ -23,13 +62,26 @@ See [docs/changelog-guide.md](docs/changelog-guide.md) for conventions.
 - `godot-save-systems` — replaced `ResourceLoader.load()` on `user://` saves with `store_var`/`get_var` at `allow_objects = false`. Loading a crafted `.tres` executes attached scripts, and the cloud-save section made that blob remote-controlled
 - `godot-networking` — pickup scenes resolve through a fixed table instead of a load path built from RPC arguments
 
-### Fixed
-- `scripts/new-skill.sh` — escape the description before using it as a `sed` replacement
-- `godot-save-systems` — `Error.CANT_OPEN` corrected to `Error.ERR_FILE_CANT_OPEN`, which is the enum that actually exists
-- `zod` declared explicitly instead of being hoisted from the MCP SDK as a phantom dependency
+## [1.2.0] — 2026-08-25
 
-### Removed
-- Dangling `## References` sections from 20 skills — the linked files were never written. `scripts/verify.sh` now checks that reference links resolve instead of requiring a `references/` directory, so a skill may ship without one
+### Added
+- `godot-headless-workflow` — Agent-first development loop: headless validation/import gates, gdUnit4 CLI testing, text-scene editing safety rules, CLI export pipeline with Android/iOS presets and signing env vars, store-submission checklist, RevenueCat plugin integration playbook, and cross-platform notes for Windows/Linux hosts
+
+## [1.1.0] — 2026-06-21
+
+### Added
+- Phase 4 skills: `godot-architecture`, `godot-state-management`, `godot-save-systems`, `godot-inventory-economy`, `godot-dialog-systems`, `godot-i18n`
+- Phase 5 skills: `godot-audio`, `godot-shaders-vfx`, `godot-input`
+- Phase 6 quality gates: `scripts/verify.sh`, `scripts/lint-skills.sh`, `scripts/check-agent-extensions.sh`, GitHub Actions CI
+- Phase 7: project files (`project.godot`, scenes, scripts) for the three example projects
+- `scripts/new-skill.sh` — Scaffold new skill directories from template
+- `docs/skill-template/` — Copy-paste skill template (SKILL.md, agents/, references/)
+- `docs/ecosystem.md` — Godot ecosystem integrations guide (20+ tools/plugins)
+- `docs/release-process.md` — Release checklist, npm publish steps, rollback procedure
+- `docs/changelog-guide.md` — Changelog format conventions and semver rules
+
+### Changed
+- Author references renamed from RoboCat to vl4dt
 
 ## [1.0.0] — 2026-06-20
 
@@ -40,6 +92,7 @@ See [docs/changelog-guide.md](docs/changelog-guide.md) for conventions.
 - `godot-csharp-patterns` — Export attributes, signal handling, performance optimization
 - `godot-code-review` — Performance checklist, anti-patterns, memory management
 - `godot-debugging` — Output methods, profiler workflow, common error patterns
+- `godot-47-migration` — Migration from Godot 4.x to 4.7
 
 ### Added — Phase 2: MCP Bridge
 - MCP server (Node.js) with 25 tools across 6 categories (scene, script, project, runtime, file, visualization)
@@ -98,14 +151,6 @@ Designed and tested for:
 - Cursor / Windsurf (via `.cursorrules`)
 - Gemini CLI (partial support)
 - Kiro (emerging support)
-
-## [0.1.0] — 2026-06-21 (Initial development)
-
-### Added
-- Initial package structure and architecture
-- First 7 core skills
-- Basic documentation
-- MCP bridge design documents
 
 ---
 

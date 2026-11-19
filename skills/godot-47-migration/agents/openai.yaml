@@ -1,13 +1,10 @@
-# OpenAI / Codex CLI extension for godot-4.7-migration
+# OpenAI / Codex CLI extension for godot-47-migration
 # Safely ignored by other agents per Agent Skills Open Standard
+# Codex reads interface (UI metadata), policy and dependencies from this file.
+
+interface:
+  display_name: "Godot 4.7 Migration"
+  short_description: "Godot 4.7 migration guide"
 
 policy:
-  safe: true
-  no_network: true
-
-when_to_use:
-  - "migrating to Godot 4.7"
-  - "Godot version upgrade"
-  - "breaking changes in Godot 4.7"
-  - "new Godot 4.7 features"
-  - "HDR setup in Godot"
+  allow_implicit_invocation: true

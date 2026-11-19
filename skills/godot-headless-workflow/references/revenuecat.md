@@ -105,4 +105,3 @@ Wire `entitlements_changed` into game systems (unlock levels, remove ads, etc.).
 
 - Plugin: github.com/FunkyMuse/godot-revenuecat · godot-x/revenuecat · Asset Library #4493
 - Official SDKs: github.com/RevenueCat/purchases-ios · purchases-android · docs.revenuecat.com
-- Engine ranking context: ship-a-ton-2026/docs/engine-research.md

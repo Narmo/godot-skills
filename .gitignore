@@ -1,14 +1,6 @@
 # Pi agent internals
 .pi/
 
-# Node modules
-node_modules/
-
-# Build artifacts
-mcp-bridge/godot-mcp-server/dist/
-mcp-bridge/godot-mcp-server/*.tsbuildinfo
-mcp-bridge/_gen.js
-
 # IDE
 .vscode/
 .idea/
@@ -23,7 +15,6 @@ desktop.ini
 
 # Logs
 *.log
-npm-debug.log*
 
 # Environment
 .env
@@ -33,13 +24,7 @@ npm-debug.log*
 tmp/
 temp/
 
-# Godot (if developing locally)
-*.import
-*.import/
-.uid
+# Godot (example projects opened locally)
+.godot/
 export/
 
-# Beads / Dolt files (added by bd init)
-.dolt/
-*.db
-.beads-credential-key

@@ -33,17 +33,22 @@ mkdir -p "${PROJECT_PATH}/assets/fonts"
 mkdir -p "${PROJECT_PATH}/assets/models"
 mkdir -p "${PROJECT_PATH}/levels"
 
-# Create .gdignore in assets
-touch "${PROJECT_PATH}/assets/.gdignore"
+# Source files Godot should not import (layered .psd/.kra, .blend backups, design docs).
+# A .gdignore file makes the editor skip its folder entirely, so never put one in assets/.
+mkdir -p "${PROJECT_PATH}/art_source"
+touch "${PROJECT_PATH}/art_source/.gdignore"
 
-# Create .gitignore
+# Create .gitignore (Godot's recommended ignores; keep .import, .uid, .csproj and .sln files)
 cat > "${PROJECT_PATH}/.gitignore" << 'GITIGNORE'
 # Godot editor cache
 .godot/
-*.import/
 
 # Export outputs
-export-*/
+export/
+
+# Mono/.NET build output
+.mono/
+data_*/
 
 # OS-specific
 .DS_Store
@@ -52,14 +57,10 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
-*.sln
-*.csproj
-*.slnx
-*.godot
 GITIGNORE
 
 # Create project.godot template
-cat > "${PROJECT_PATH}/project.godot" << 'PROJEOF'
+cat > "${PROJECT_PATH}/project.godot" << PROJEOF
 ; Engine configuration file.
 ; It's best edited using the editor UI and not directly,
 ; but it can also be edited safely in a text editor.
@@ -70,12 +71,12 @@ config_version=5
 
 config/name="${PROJECT_NAME}"
 config/description="A Godot 4.x project"
-config/features=PackedStringArray("Forward Plus")
+config/features=PackedStringArray("4.7", "Forward Plus")
 
 [display]
 
-window/size/width=1280
-window/size/height=720
+window/size/viewport_width=1280
+window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 
 [rendering]

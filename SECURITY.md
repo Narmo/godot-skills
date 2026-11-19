@@ -11,30 +11,9 @@ an initial response within a week.
 
 ## Scope
 
-This repository ships two kinds of content, and both are in scope:
-
-- **The MCP bridge** (`mcp-bridge/`) — the server and the wire protocol it defines.
-- **The skills and examples** (`skills/`, `examples/`) — these are copied into real
-  games, so an insecure pattern documented here propagates downstream. Insecure
-  guidance is a vulnerability in this repository, not just a documentation bug.
-
-## Threat Model for the MCP Bridge
-
-The bridge lets an AI agent write files into a project and run scenes, which is
-arbitrary code execution by design. Its security therefore rests on two properties,
-both specified in [`mcp-bridge/protocol.md`](mcp-bridge/protocol.md):
-
-1. **Only the intended client can connect.** Binding to `127.0.0.1` is not
-   sufficient: any local process can reach that port, and any web page the user
-   visits can open a WebSocket to it, because browsers do not apply the same-origin
-   policy to WebSockets. A conforming plugin requires a per-session token and
-   rejects any handshake carrying an `Origin` header.
-2. **File access stays inside the project.** `res://` is not a sandbox — Godot
-   resolves `res://../..` and absolute host paths. A conforming plugin validates
-   every path before opening it.
-
-A plugin that skips either property turns the bridge into a remote shell. If you
-find a released plugin that does, report it here as well as to its author.
+The skills and examples (`skills/`, `examples/`) are in scope: they are copied into real
+games, so an insecure pattern documented here propagates downstream. Insecure guidance is
+a vulnerability in this repository, not just a documentation bug.
 
 ## Known-Dangerous Godot Patterns
 

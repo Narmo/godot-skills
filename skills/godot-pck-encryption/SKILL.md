@@ -5,7 +5,7 @@ license: MIT
 compatibility:
   - godot-4.7
 metadata:
-  author: vl4dt
+  author: Nikita Denin (narmo)
   version: 0.1.0
   tags:
     - godot

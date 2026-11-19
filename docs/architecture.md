@@ -2,19 +2,19 @@
 
 ## ADR-001: Package Distribution Model
 
-**Status:** Accepted  
+**Status:** Accepted (revised 2026-11-19)  
 **Date:** 2026-06-21
 
 ### Context
 We need to distribute Godot development skills to 30+ coding agents through a single package.
 
 ### Decision
-Use dual distribution: npm package (`@vl4dt/godot-skills`) for pi-agent and git repository for other agents. Each skill is a self-contained directory with its own SKILL.md.
+Distribute through git only. pi installs the repository with `pi install git:github.com/Narmo/godot-skills` and discovers skills from the conventional `skills/` directory; other agents copy or symlink `skills/`. Each skill is a self-contained directory with its own SKILL.md.
 
 ### Consequences
-- **Pros:** Widest reach, standard tooling support, easy updates via npm
-- **Cons:** Requires npm account, scoped package name adds verbosity
-- **Alternatives considered:** Unscoped package (simpler but harder to find), GitHub-only distribution (misses npm ecosystem)
+- **Pros:** One source of truth, no registry account or package manifest to maintain; releases are git tags
+- **Cons:** No listing in the pi package gallery, which indexes npm packages only
+- **History:** The earlier npm distribution is recorded in CHANGELOG.md
 
 ## ADR-002: Progressive Disclosure Strategy
 
@@ -48,22 +48,6 @@ Target Godot 4.7 as the primary version, but ensure all patterns are compatible 
 - **Cons:** Some 4.0 users may encounter unfamiliar APIs
 - **Alternatives considered:** Lock to specific 4.x version (too restrictive), support only latest (alienates users)
 
-## ADR-004: MCP Bridge Architecture
-
-**Status:** Accepted  
-**Date:** 2026-06-21
-
-### Context
-Phase 2 requires live Godot editor integration for enhanced agent capabilities.
-
-### Decision
-Build a lightweight, standalone Node.js MCP server that connects to the Godot editor via WebSocket and exposes tools through stdio. This is outside pi-agent's built-in support (pi has no MCP), so it will be an optional add-on.
-
-### Consequences
-- **Pros:** Compatible with all MCP clients, optional/standalone, graceful degradation
-- **Cons:** Additional maintenance burden, outside pi-agent's native capabilities
-- **Alternatives considered:** Build as pi-agent extension (limits compatibility), skip MCP entirely (misses live editor integration)
-
 ## ADR-005: Cross-Platform Script Handling
 
 **Status:** Accepted  
@@ -82,14 +66,14 @@ Shell scripts use POSIX-compatible syntax where possible. Provide `.ps1` variant
 
 ## ADR-006: Skill Naming Convention
 
-**Status:** Accepted  
+**Status:** Accepted (revised 2026-11-19)  
 **Date:** 2026-06-21
 
 ### Context
 Skill names need to be discoverable, unique, and follow the Agent Skills standard.
 
 ### Decision
-Prefix all skills with `godot-` for clear domain identification. Use kebab-case. Keep names under 64 characters. Names do not need to match directory names (pi-agent allows this deviation from the standard).
+Prefix all skills with `godot-` for clear domain identification. Use kebab-case. Keep names under 64 characters. Each name matches its directory name — pi does not require it, but other Agent Skills implementations do, so matching names are the portable choice.
 
 ### Consequences
 - **Pros:** Clear namespace, easy to discover, follows best practices

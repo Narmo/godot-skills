@@ -94,8 +94,9 @@ func on_transition(from: String, to: String):
 - Lower latency for local interactions
 - Higher cheating risk
 
-### Godot 4.7: Steam Frame Integration
-For multiplayer with Steam, use the new Steam Frame configuration for lobby management and overlay features.
+### Steam
+Steam lobbies and Steam networking come from the third-party GodotSteam add-on; Godot itself
+has no Steam API. (Steam Frame, new in Godot 4.7's feature list, is Valve's XR headset.)
 
 ## Genre-Specific Patterns
 
@@ -110,23 +111,13 @@ For multiplayer with Steam, use the new Steam Frame configuration for lobby mana
 - TileMapLayer for layered level design
 
 ### RTS Architecture
-- Pathfinding with A* on NavigationMesh
+- Pathfinding with NavigationRegion3D/NavigationAgent3D (navmesh), or AStarGrid2D for grid maps
 - Unit grouping and selection system
 - Command queue pattern for input handling
 
 ## Godot 4.7 Brainstorming Considerations
 
-- **tween_await()** — Use for sequential animation chains instead of nested callbacks
-- **VirtualJoystick** — Built-in mobile controls simplify mobile game development
-- **Control offset transforms** — New UI animation system enables complex transitions without custom shaders
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools can inspect your live project:
-
-- **`scene_tree`** — Inspect current scene hierarchy for architecture decisions
-- **`class_db_info`** — Query class capabilities to choose the right node type
-- **`map_project`** — Generate a project graph to visualize architecture
-- **`project_settings_read`** — Check current project configuration during brainstorming
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.
+- **`Tween.tween_await()`** — pause a tween until a signal fires; handy for dialogue and cutscene sequencing
+- **VirtualJoystick** — built-in touch controls that press regular input actions
+- **Control offset transforms** — animate UI elements inside containers without fighting the layout
+- **Android XR and Steam Frame** — production-ready XR targets if you plan a VR/MR version

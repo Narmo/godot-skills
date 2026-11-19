@@ -11,8 +11,5 @@
 # Keep JSON consistent
 *.json text=eol=lf
 
-# Keep TypeScript consistent
-*.ts text=eol=lf
-
 # Markdown
 *.md text=eol=lf

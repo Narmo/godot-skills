@@ -35,7 +35,6 @@ Define actions in **Project Settings → Input Map** or via code:
 ```gdscript
 # Register actions at runtime (or use editor)
 InputMap.add_action("move_left")
-InputMap.action_add_event("move_left", InputEventKey.new())
 
 var left_event = InputEventKey.new()
 left_event.keycode = KEY_A
@@ -70,12 +69,9 @@ class_name PlayerController extends CharacterBody2D
 @export var speed: float = 200.0
 
 func _physics_process(delta: float) -> void:
-    # Input.get_action_strength returns 0.0 to 1.0
-    # Automatically combines keyboard + gamepad inputs
-    var input_x = Input.get_action_strength("move_right") - Input.get_action_strength("move_left")
-    var input_y = Input.get_action_strength("move_down") - Input.get_action_strength("move_up")
-
-    var direction = Vector2(input_x, input_y).normalized()
+    # get_vector() combines keyboard + gamepad, applies the actions' dead zones,
+    # and limits the length to 1 (diagonals aren't faster)
+    var direction := Input.get_vector("move_left", "move_right", "move_up", "move_down")
     velocity = direction * speed
 
     move_and_slide()
@@ -129,20 +125,14 @@ Input.start_joy_vibration(0, 0.3, 0.8, 0.2)  # weak, strong, duration
 
 ### Dead Zone Configuration
 
-Prevent drift from analog sticks:
+Prevent drift from analog sticks. Each action has its own dead zone (Project Settings > Input
+Map, the value next to the action), also settable in code:
 
 ```gdscript
-# Set global dead zone (Project Settings → Input Devices → Keyboard/Mouse → Joystick Dead Zone)
-# Or per-action in code:
-Input.set_deadzone_value(0.15)  # Default is typically 0.15-0.25
+InputMap.action_set_deadzone("move_left", 0.2)
 
-# Custom dead zone for specific input reading
-func get_analog_input(action_name: String, dead_zone: float = 0.15) -> float:
-    var value = Input.get_action_strength(action_name)
-    if value < dead_zone:
-        return 0.0
-    # Remap from [dead_zone, 1.0] to [0.0, 1.0]
-    return (value - dead_zone) / (1.0 - dead_zone)
+# get_vector() and get_axis() accept a dead zone override:
+var stick := Input.get_vector("look_left", "look_right", "look_up", "look_down", 0.15)
 ```
 
 ## Input Remapping UI
@@ -174,11 +164,9 @@ func _input(event: InputEvent) -> void:
     if not waiting_for_input:
         return
 
-    if event is InputEventKey or event is InputEventJoypadButton:
+    if (event is InputEventKey or event is InputEventJoypadButton) and event.is_pressed():
         # Clear old bindings for this action
-        var old_events = InputMap.action_get_events(current_action)
-        for old_event in old_events:
-            InputMap.action_remove_event(current_action, old_event)
+        InputMap.action_erase_events(current_action)
 
         # Add new binding
         InputMap.action_add_event(current_action, event.duplicate())
@@ -234,12 +222,9 @@ func load_bindings() -> Error:
             continue
 
         # Clear and re-add
-        var old_events = InputMap.action_get_events(action)
-        for old_event in old_events:
-            InputMap.action_remove_event(action, old_event)
-
-        for str in event_strings.split(","):
-            var event = _string_to_event(str)
+        InputMap.action_erase_events(action)
+        for entry in event_strings.split(","):
+            var event := _string_to_event(entry)
             if event:
                 InputMap.action_add_event(action, event)
 
@@ -252,8 +237,8 @@ func _event_to_string(event: InputEvent) -> String:
         return "joypad:%d" % event.button_index
     return ""
 
-func _string_to_event(str: String) -> InputEvent:
-    var parts = str.split(":")
+func _string_to_event(entry: String) -> InputEvent:
+    var parts := entry.split(":")
     if parts[0] == "key":
         var event = InputEventKey.new()
         event.keycode = int(parts[1])
@@ -270,19 +255,18 @@ func _string_to_event(str: String) -> InputEvent:
 
 ### Virtual Joystick (Godot 4.7+)
 
-```gdscript
-# Godot 4.7 includes VirtualJoystick control node
-# Place in scene, configure via inspector:
-# - Base texture, knob texture
-# - Dead zone value
-# - Action names for directional output
+Godot 4.7 adds a `VirtualJoystick` control. It doesn't expose a vector of its own: it presses
+the input actions named in `action_left`, `action_right`, `action_up` and `action_down`
+(`ui_*` by default), so the same movement code serves keyboard, gamepad and touch.
 
-# Read virtual joystick input:
-func _physics_process(delta: float) -> void:
-    var joystick = $VirtualJoystick as VirtualJoystick
-    if joystick and joystick.is_active():
-        var direction = joystick.get_vector()  # Vector2 (-1 to 1)
-        velocity = direction * speed
+```gdscript
+# In the scene: VirtualJoystick with action_left = "move_left", action_right = "move_right",
+# action_up = "move_up", action_down = "move_down".
+# joystick_mode: Fixed, Dynamic or Following; visibility_mode: Always or When Touched.
+
+func _physics_process(_delta: float) -> void:
+    velocity = Input.get_vector("move_left", "move_right", "move_up", "move_down") * speed
+    move_and_slide()
 ```
 
 ### Multi-Touch Gestures
@@ -300,28 +284,31 @@ func _input(event: InputEvent) -> void:
             _touch_points[event.index] = event.position
         else:
             _touch_points.erase(event.index)
+        _update_pinch()
 
 func _handle_drag(event: InputEventScreenDrag) -> void:
     if _touch_points.has(event.index):
         var delta = event.position - _touch_points[event.index]
         _touch_points[event.index] = event.position
+        _update_pinch()
         # Use delta for movement, camera pan, etc.
 
 # Pinch-to-zoom with two fingers
-func get_pinch_scale() -> float:
-    var indices = _touch_points.keys()
-    if indices.size() < 2:
-        return 1.0
+signal pinched(scale_factor: float)
 
-    var idx_a = indices[0]
-    var idx_b = indices[1]
-    var current_dist = _touch_points[idx_a].distance_to(_touch_points[idx_b])
-    # Compare to previous frame distance for zoom delta
-    return current_dist / maxf(1.0, _get_previous_distance())
+var _last_pinch_distance := 0.0
 
-var _previous_distance: float = 0.0
-func _get_previous_distance() -> float:
-    return _previous_distance
+
+func _update_pinch() -> void:
+    # Call after updating _touch_points in _input()
+    if _touch_points.size() < 2:
+        _last_pinch_distance = 0.0
+        return
+    var points := _touch_points.values()
+    var distance: float = points[0].distance_to(points[1])
+    if _last_pinch_distance > 0.0:
+        pinched.emit(distance / _last_pinch_distance)  # >1 spreads, <1 pinches
+    _last_pinch_distance = distance
 ```
 
 ## Accessibility Patterns
@@ -355,15 +342,4 @@ func _unhandled_input(event: InputEvent) -> void:
 
 ## Godot 4.7 Input Notes
 
-- **VirtualJoystick** — New built-in control node for touch-based analog input
-- **InputActionEvent** — Enhanced event structure for complex action queries
-- **Gamepad** — Improved auto-detection and button mapping consistency
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools can inspect and modify your project live:
-
-- **`project_info`** — Check configured input actions and settings
-- **`script_read`** / **`script_edit`** — Read and modify input scripts
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.
+- **VirtualJoystick** — new built-in control for touch input; it presses regular input actions

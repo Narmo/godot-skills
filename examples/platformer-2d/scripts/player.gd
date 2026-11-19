@@ -1,95 +1,68 @@
 ## Platformer player controller.
-## Demonstrates: CharacterBody2D movement, gravity, jumping, input buffering,
-## and VirtualJoystick support (Godot 4.7+).
-
+## Demonstrates: CharacterBody2D gravity and jumping, jump buffering, coyote
+## time, and an Area2D hitbox for stomping enemies and touching hazards.
 class_name Player
 extends CharacterBody2D
 
 signal died
-signal level_complete
+signal enemy_stomped(points: int)
 
 const GRAVITY := 980.0
 const MOVE_SPEED := 200.0
-const JUMP_VELOCITY := -350.0
-const INPUT_BUFFER_FRAMES := 6
-const COYOTE_FRAMES := 6
+const JUMP_VELOCITY := -420.0
+const STOMP_BOUNCE := -300.0
+const JUMP_BUFFER_TIME := 0.1
+const COYOTE_TIME := 0.1
 
-@export var jump_buffer_frames: int = INPUT_BUFFER_FRAMES
-@onready var sprite := $Sprite2D
-@onready var animated_sprite := $AnimatedSprite2D
+var _jump_buffer := 0.0
+var _coyote := 0.0
+var _spawn_position: Vector2
 
-var _input_buffer_timer: int = 0
-var _coyote_timer: int = 0
-var _was_on_floor: bool = true
+@onready var _hitbox: Area2D = $Hitbox
 
 
 func _ready() -> void:
-	# Player collides with platforms and enemies
-	collision_layer = 1  # player layer
-	collision_mask = 4 | 2 | 8  # platforms + enemies + hazards
+	_spawn_position = global_position
+	_hitbox.body_entered.connect(_on_hitbox_body_entered)
 
 
 func _physics_process(delta: float) -> void:
-	var direction := _get_input_direction()
-
-	# Horizontal movement
-	velocity.x = direction * MOVE_SPEED
 	velocity.y += GRAVITY * delta
 
-	# Coyote time tracking
-	if is_on_floor():
-		_coyote_timer = COYOTE_FRAMES
-		_was_on_floor = true
-	else:
-		_coyote_timer -= 1 if _coyote_timer > 0 else 0
-
-	# Input buffer for jump
+	# Coyote time: a jump still counts for a moment after walking off a ledge.
+	_coyote = COYOTE_TIME if is_on_floor() else maxf(_coyote - delta, 0.0)
+	# Jump buffering: a jump pressed shortly before landing is not lost.
 	if Input.is_action_just_pressed("jump"):
-		_input_buffer_timer = jump_buffer_frames
+		_jump_buffer = JUMP_BUFFER_TIME
+	else:
+		_jump_buffer = maxf(_jump_buffer - delta, 0.0)
 
-	if _input_buffer_timer > 0:
-		_input_buffer_timer -= 1
-
-	# Jump with coyote time + input buffering
-	if _input_buffer_timer > 0 and (_was_on_floor or _coyote_timer > 0):
+	if _jump_buffer > 0.0 and _coyote > 0.0:
 		velocity.y = JUMP_VELOCITY
-		_input_buffer_timer = 0
-		_coyote_timer = 0
-		_was_on_floor = false
+		_jump_buffer = 0.0
+		_coyote = 0.0
 
+	# move_* and jump come from the keyboard and from the on-screen
+	# VirtualJoystick in the HUD (Godot 4.7+).
+	velocity.x = Input.get_axis("move_left", "move_right") * MOVE_SPEED
 	move_and_slide()
 
-	# Update facing direction
-	if sprite and direction != 0:
-		sprite.flip_h = direction < 0
 
-
-func _get_input_direction() -> float:
-	var dir := Input.get_axis("move_left", "move_right")
-
-	# VirtualJoystick support (Godot 4.7+)
-	if _joystick_active():
-		dir = Input.get_axis("ui_left", "ui_right")
-
-	return dir
-
-
-func _on_body_entered(body: Node2D) -> void:
-	if body is Enemy:
-		# Check if landing on top of enemy (stomp)
-		if velocity.y > 0 and position.y < body.position.y:
-			body.take_damage()
-			velocity.y = JUMP_VELOCITY * 0.7  # Bounce
+func _on_hitbox_body_entered(body: Node2D) -> void:
+	var enemy := body as Enemy
+	if enemy:
+		# Falling onto an enemy from above defeats it; any other contact hurts.
+		if velocity.y > 0.0 and global_position.y < enemy.global_position.y:
+			enemy.defeat()
+			velocity.y = STOMP_BOUNCE
+			enemy_stomped.emit(100)
 		else:
-			die()
-	elif body.get_collision_layer_value(4):  # Hazard layer
-		die()
+			_die()
+	elif body.is_in_group("hazard"):
+		_die()
 
 
-func die() -> void:
+func _die() -> void:
 	died.emit()
-	queue_free()
-
-
-func _joystick_active() -> bool:
-	return Input.get_connected_joypads().size() > 0
+	global_position = _spawn_position
+	velocity = Vector2.ZERO

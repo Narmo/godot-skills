@@ -1,7 +1,15 @@
 ---
 name: {{SKILL_NAME}}
-description: {{SKILL_DESCRIPTION}}
+description: "{{SKILL_DESCRIPTION}}"
 license: MIT
+compatibility:
+  - godot-4.7
+metadata:
+  author: Your Name (handle)
+  version: 0.1.0
+  tags:
+    - godot
+  created: YYYY-MM-DD
 ---
 
 # {{SKILL_TITLE}}

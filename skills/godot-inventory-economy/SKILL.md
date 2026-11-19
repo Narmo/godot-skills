@@ -42,7 +42,7 @@ enum EquipmentSlot { HEAD, CHEST, HANDS, FEET, WEAPON, ACCESSORY }
 @export var description: String = ""
 @export var icon: Texture2D = null
 @export var item_type: ItemType = ItemType.MATERIAL
-@export var stack_size: int = 1  # Max per stack, 0 = unique
+@export var stack_size: int = 1  # Max per stack; 1 = doesn't stack
 @export var value: int = 0  # Gold/sell value
 @export var equipment_slot: EquipmentSlot = EquipmentSlot.WEAPON
 
@@ -82,36 +82,31 @@ var items: Array[InventoryItem] = []
 var equipped: Dictionary = {}  # slot -> InventoryItem
 @export var max_slots: int = 20
 
+## Adds as much as fits; returns false if some of the quantity didn't fit.
 func add_item(data: ItemData, quantity: int = 1) -> bool:
-    if items.size() >= max_slots:
-        return false
-
-    # Try to stack with existing item
-    for inv_item in items:
-        if inv_item.item_data == data and data.stack_size > 1:
-            var remaining = data.stack_size - inv_item.quantity
-            if remaining > 0:
-                var add_amount = min(quantity, remaining)
+    # Fill existing stacks first
+    if data.stack_size > 1:
+        for inv_item in items:
+            if quantity <= 0:
+                break
+            if inv_item.item_data == data and inv_item.quantity < data.stack_size:
+                var add_amount := mini(quantity, data.stack_size - inv_item.quantity)
                 inv_item.quantity += add_amount
                 quantity -= add_amount
                 item_added.emit(inv_item)
-                inventory_changed.emit()
-            if quantity <= 0:
-                return true
 
-    # Create new stack
-    while quantity > 0:
-        var new_item = InventoryItem.new()
+    # Then open new stacks while there are free slots
+    while quantity > 0 and items.size() < max_slots:
+        var new_item := InventoryItem.new()
         new_item.item_data = data
-        var add_amount = min(quantity, data.stack_size if data.stack_size > 0 else 1)
-        new_item.quantity = add_amount
-        new_item.durability = data.stack_size > 1 ? 1.0 : -1.0
+        new_item.quantity = mini(quantity, maxi(data.stack_size, 1))
+        new_item.durability = 1.0 if data.item_type == ItemData.ItemType.EQUIPMENT else -1.0
         items.append(new_item)
         item_added.emit(new_item)
-        quantity -= add_amount
+        quantity -= new_item.quantity
 
     inventory_changed.emit()
-    return true
+    return quantity <= 0
 
 func remove_item(index: int, quantity: int = 1) -> bool:
     if index < 0 or index >= items.size():
@@ -129,8 +124,12 @@ func remove_item(index: int, quantity: int = 1) -> bool:
     return true
 
 func equip(item_index: int) -> bool:
-    var inv_item = items[item_index]
-    var slot = inv_item.item_data.equipment_slot
+    if item_index < 0 or item_index >= items.size():
+        return false
+    var inv_item := items[item_index]
+    if inv_item.item_data.item_type != ItemData.ItemType.EQUIPMENT:
+        return false
+    var slot := inv_item.item_data.equipment_slot
 
     # Unequip current item in slot
     if equipped.has(slot):
@@ -154,73 +153,82 @@ func unequip(slot: ItemData.EquipmentSlot) -> bool:
 
 ## Drag-and-Drop Inventory UI
 
-Grid-based inventory with drag support:
+Controls have built-in drag and drop: return data from `_get_drag_data()`, accept it in
+`_can_drop_data()`, and handle it in `_drop_data()`.
 
 ```gdscript
-class_name InventorySlot extends Container
+class_name InventorySlot
+extends PanelContainer
 
-signal slot_clicked(index: int)
-signal drag_started(item: InventoryItem, index: int)
 signal drop_requested(from_index: int, to_index: int)
 
 var item: InventoryItem = null
 var slot_index: int = 0
 
-func _gui_input(event: InputEvent) -> void:
-    if event is InputEventMouseButton and event.pressed:
-        if event.button_index == MOUSE_BUTTON_LEFT and item:
-            drag_started.emit(item, slot_index)
+@onready var _icon: TextureRect = $Icon
+@onready var _quantity_label: Label = $Quantity
 
-# Handle dropping another item into this slot
-func accept_drop(from_slot: InventorySlot) -> bool:
-    if not item:
-        # Empty slot — move item here
-        drop_requested.emit(from_slot.slot_index, slot_index)
-        return true
-    elif from_slot.item and not item:
-        drop_requested.emit(from_slot.slot_index, slot_index)
-        return true
-    return false
+
+func _get_drag_data(_at_position: Vector2) -> Variant:
+    if item == null:
+        return null
+    var preview := TextureRect.new()
+    preview.texture = item.item_data.icon
+    set_drag_preview(preview)
+    return {"from_index": slot_index}
+
+
+func _can_drop_data(_at_position: Vector2, data: Variant) -> bool:
+    return data is Dictionary and data.has("from_index") and data["from_index"] != slot_index
+
+
+func _drop_data(_at_position: Vector2, data: Variant) -> void:
+    drop_requested.emit(data["from_index"], slot_index)
+
 
 func update_display() -> void:
-    # Update child controls (icon, quantity label) based on item
-    pass
+    _icon.texture = item.item_data.icon if item else null
+    _quantity_label.text = str(item.quantity) if item and item.quantity > 1 else ""
 ```
 
 ### Inventory Grid
 
 ```gdscript
-class_name InventoryGrid extends GridContainer
+class_name InventoryGrid
+extends GridContainer
 
 @export var inventory: Inventory
 @export var slot_scene: PackedScene
 
-func _ready():
-    for i in range(inventory.max_slots):
-        var slot = slot_scene.instantiate() as InventorySlot
+
+func _ready() -> void:
+    for i in inventory.max_slots:
+        var slot := slot_scene.instantiate() as InventorySlot
         slot.slot_index = i
-        slot.drag_started.connect(_on_drag_started)
         slot.drop_requested.connect(_on_drop_requested)
         add_child(slot)
+    inventory.inventory_changed.connect(refresh)
     refresh()
+
 
 func refresh() -> void:
     for child in get_children():
-        if child is InventorySlot:
-            var slot = child as InventorySlot
-            if slot.slot_index < inventory.items.size():
-                slot.item = inventory.items[slot.slot_index]
-            else:
-                slot.item = null
+        var slot := child as InventorySlot
+        if slot:
+            slot.item = inventory.items[slot.slot_index] if slot.slot_index < inventory.items.size() else null
             slot.update_display()
 
+
 func _on_drop_requested(from: int, to: int) -> void:
-    # Swap items between slots
-    if from >= inventory.items.size() or to >= inventory.items.size():
+    var items := inventory.items
+    if from >= items.size():
         return
-    var temp = inventory.items[from]
-    inventory.items[from] = inventory.items[to]
-    inventory.items[to] = temp
+    if to >= items.size():
+        items.append(items.pop_at(from))  # dropped on an empty slot: move to the end
+    else:
+        var temp := items[from]
+        items[from] = items[to]
+        items[to] = temp
     refresh()
 ```
 
@@ -255,9 +263,9 @@ func buy_item(inventory: Inventory, item_data: ItemData, price: int) -> bool:
     return true
 
 func sell_item(inventory: Inventory, item_index: int, price: int) -> bool:
-    var inv_item = inventory.items[item_index]
-    if not inv_item:
+    if item_index < 0 or item_index >= inventory.items.size():
         return false
+    var inv_item := inventory.items[item_index]
     inventory.remove_item(item_index, 1)
     add_gold(price)
     item_sold.emit(inv_item.item_data, price)
@@ -266,43 +274,50 @@ func sell_item(inventory: Inventory, item_index: int, price: int) -> bool:
 
 ## Save Integration
 
-Serialize inventory for save systems:
+Serialize item **ids**, and resolve them through a fixed table on load. Never build a
+`load()` path from save data — the player controls the save file, and would control which
+resource you load.
 
 ```gdscript
-func serialize_inventory() -> Dictionary:
-    var result = []
+# item_database.gd — autoload "ItemDatabase": every item the game ships, by id
+extends Node
+
+const ITEMS: Dictionary[String, ItemData] = {
+    "potion": preload("res://items/potion.tres"),
+    "iron_sword": preload("res://items/iron_sword.tres"),
+}
+
+
+func get_item(item_id: String) -> ItemData:
+    return ITEMS.get(item_id)
+```
+
+```gdscript
+# Add to Inventory
+func serialize_inventory() -> Array[Dictionary]:
+    var result: Array[Dictionary] = []
     for inv_item in items:
         result.append({
             "item_id": inv_item.item_data.item_id,
             "quantity": inv_item.quantity,
             "durability": inv_item.durability,
-            "equipped": inv_item.is_equipped
+            "equipped": inv_item.is_equipped,
         })
     return result
+
 
 func deserialize_inventory(data: Array) -> void:
     items.clear()
     for entry in data:
-        var item_data = load("res://items/" + entry["item_id"] + ".tres") as ItemData
-        if item_data:
-            var inv_item = InventoryItem.new()
-            inv_item.item_data = item_data
-            inv_item.quantity = entry["quantity"]
-            inv_item.durability = entry.get("durability", 1.0)
-            items.append(inv_item)
+        if entry is not Dictionary:
+            continue
+        var item_data := ItemDatabase.get_item(str(entry.get("item_id", "")))
+        if item_data == null:
+            continue  # unknown id: skip it rather than trusting the file
+        var inv_item := InventoryItem.new()
+        inv_item.item_data = item_data
+        inv_item.quantity = clampi(int(entry.get("quantity", 1)), 1, maxi(item_data.stack_size, 1))
+        inv_item.durability = clampf(float(entry.get("durability", 1.0)), -1.0, 1.0)
+        items.append(inv_item)
     inventory_changed.emit()
 ```
-
-## Godot 4.7 Economy Notes
-
-- **ResourceCache** — Preload item resources at game start for instant UI updates
-- **tween_await()** — Animate gold counter changes or item pickup effects
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools can inspect and modify your project live:
-
-- **`script_read`** / **`script_edit`** — Read and modify inventory scripts
-- **`scene_tree`** — Inspect inventory UI node hierarchy
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.

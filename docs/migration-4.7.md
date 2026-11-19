@@ -1,85 +1,80 @@
 # Godot 4.7 Migration Guide
 
-This guide covers the key changes in Godot 4.7 that affect game development patterns and agent skill implementations.
+This guide covers the Godot 4.7 changes that affect game development patterns and the skills in
+this package. Features below were checked against the [4.7 release notes](https://godotengine.org/releases/4.7/)
+and the 4.7.2 engine.
 
 ## New Features in Godot 4.7
 
 ### Rendering & Visual
-- **HDR output settings** — Project settings now support HDR output configuration for compatible displays
-- **New AreaLight3D node** — Enhanced area lighting with improved performance and new modes
-- **Nearest-neighbor viewport scaling** — Better pixel-perfect rendering for retro-style games
+- **HDR output** — opt-in through `display/window/hdr/request_hdr_output` (off by default) for HDR-capable displays
+- **AreaLight3D** — new node for rectangular light sources (`area_size`, `area_range`, `area_attenuation`, `area_texture`); replaces the emissive-material-plus-GI workaround
+- **Nearest-neighbor viewport scaling** — new `SCALING_3D_MODE_NEAREST` option for crisp, pixel-art-style 3D upscaling
+- **DrawableTexture2D** — an approachable API for drawing on textures at runtime
 
 ### UI & Controls
-- **VirtualJoystick for mobile** — Built-in virtual joystick support, replacing third-party solutions
-- **PopupMenu search** — Native search functionality in popup menus
-- **Control offset transforms** — New transform system for UI animation with improved performance
-- **Collapsible animation tracks** — AnimationTrackEdit now supports collapsing tracks for better organization
+- **VirtualJoystick** — built-in on-screen joystick with three modes (Fixed, Dynamic, Following); it triggers the input actions set in `action_left`/`action_right`/`action_up`/`action_down` (`ui_*` by default)
+- **PopupMenu search bar** — optional search field for long menus (`search_bar_enabled`, `search_bar_min_item_count`, fuzzy search options)
+- **Control offset transforms** — `offset_transform_*` properties (position, scale, rotation, pivot) for animating UI without fighting containers
 
-### Animation & Sequencing
-- **tween_await()** — New method to await tween completion within code, enabling sequential animation chains without callback nesting
-- **DrawableTexture2D** — Dynamic texture creation at runtime for procedural UI and rendering
+### Animation
+- **`Tween.tween_await(signal)`** — pauses a tween until a signal is emitted, handy for dialogue and cutscenes
+- **Collapsible animation editor nodes** — tracks of one node can be collapsed, with an aggregate view of their keys
 
-### Android & Mobile
-- **Perfetto tracing** — Built-in Perfetto tracing support for Android performance profiling
-- **Android XR settings** — New project settings for extended reality development
+### Android & XR
+- **Perfetto** — now the default tracing tool for Android editor and template builds
+- **Android XR and Steam Frame** — production-ready XR support for both headsets (OpenXR, `xr/openxr/enabled`)
 
-### Steam Integration
-- **Steam Frame configuration** — Enhanced Steam integration with frame-based overlay support
+## Migration Checklist (4.6 → 4.7)
 
-## Migration Checklist for Existing Godot 4.x Projects
-
-### From Godot 4.6 to 4.7
-
-1. **Update project.godot** — Open in Godot 4.7 editor to auto-migrate settings
-2. **Review HDR settings** — Enable HDR output in Project Settings > Rendering > Environment if needed
-3. **Replace VirtualJoystick custom nodes** — If using third-party virtual joysticks, consider migrating to the built-in VirtualJoystick node
-4. **Update tween callbacks** — Replace nested callback patterns with `tween_await()` for cleaner code
-5. **Check AreaLight3D usage** — Review existing area lights for new 4.7 features (modes, intensity profiles)
-6. **Test Android builds** — Verify Perfetto tracing works if targeting Android profiling
-7. **Review Steam Frame config** — If using Steam integration, update frame configuration
-
-### Breaking Changes to Watch For
-
-- **VirtualJoystick API changes** — If using custom virtual joystick implementations, review the new built-in node API
-- **tween_await() replacement** — Code relying on complex tween callback chains should migrate to await syntax
-- **HDR rendering pipeline** — Projects without explicit HDR settings may see visual differences; test critical scenes
-
-### Deprecated Features
-
-No major deprecations in 4.7, but monitor the [Godot changelog](https://github.com/godotengine/godot/releases) for future version compatibility.
+1. **Back up or commit the project**, then open it in the 4.7 editor to convert it
+2. **Read the breaking changes** linked from the [4.7 release notes](https://godotengine.org/releases/4.7/)
+3. **HDR** — enable `display/window/hdr/request_hdr_output` only if you target HDR displays; nothing changes otherwise
+4. **Virtual joysticks** — consider replacing third-party joystick add-ons with the built-in VirtualJoystick node
+5. **Tween sequences that wait for signals** — replace "await the tween, await the signal, start a new tween" chains with `tween_await()`
+6. **Area lighting** — replace emissive meshes used as light panels with AreaLight3D where it looks better
+7. **XR projects** — review the OpenXR settings for Android XR and Steam Frame
+8. **Android profiling** — capture traces with Perfetto
 
 ## Code Examples
 
-### Before: Nested tween callbacks (4.6 and earlier)
+### Before: waiting for a signal between tweens (4.6 and earlier)
 ```gdscript
-func play_sequential():
-    var tween = create_tween()
-    tween.tween_property($Sprite, "position:x", 100, 1.0)
-    tween.finished.connect(func():
-        var tween2 = create_tween()
-        tween2.tween_property($Sprite, "position:y", 50, 0.5)
-    )
+signal dialogue_closed
+
+func play_cutscene() -> void:
+    var tween := create_tween()
+    tween.tween_property($Camera2D, "position:x", 400.0, 1.0)
+    await tween.finished
+    await dialogue_closed
+    tween = create_tween()
+    tween.tween_property($Camera2D, "position:x", 0.0, 1.0)
 ```
 
-### After: Using tween_await() (4.7+)
+### After: `tween_await()` (4.7+)
 ```gdscript
-func play_sequential():
-    await create_tween().tween_property($Sprite, "position:x", 100, 1.0).finished
-    await create_tween().tween_property($Sprite, "position:y", 50, 0.5).finished
+signal dialogue_closed
+
+func play_cutscene() -> void:
+    var tween := create_tween()
+    tween.tween_property($Camera2D, "position:x", 400.0, 1.0)
+    tween.tween_await(dialogue_closed)  # the tween pauses here until the signal fires
+    tween.tween_property($Camera2D, "position:x", 0.0, 1.0)
 ```
 
 ### New: VirtualJoystick (4.7+)
 ```gdscript
-# No custom implementation needed — use the built-in node
-# Add VirtualJoystick node to your scene, configure in editor
-func _input(event: InputEvent) -> void:
-    if event is InputEventJoypadMotion:
-        # Built-in axis handling
-        pass
+# Add a VirtualJoystick node to the UI. It presses the actions set in its
+# action_* properties (ui_left/ui_right/ui_up/ui_down by default), so
+# movement code reads them like any other input.
+func _physics_process(_delta: float) -> void:
+    var direction := Input.get_vector("ui_left", "ui_right", "ui_up", "ui_down")
+    velocity = direction * speed
+    move_and_slide()
 ```
 
 ## Further Reading
 
-- [Godot 4.7 Changelog](https://github.com/godotengine/godot/releases)
-- [Godot Documentation](https://docs.godotengine.org/en/stable/)
-- [Godot 4 Migration Guide](https://godotengine.org/article/migration-guide-godot-4/)
+- [Godot 4.7 release notes](https://godotengine.org/releases/4.7/)
+- [Godot 4.7 documentation](https://docs.godotengine.org/en/4.7/)
+- [Godot releases on GitHub](https://github.com/godotengine/godot/releases)

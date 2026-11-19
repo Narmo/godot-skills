@@ -39,7 +39,6 @@ After scaffolding, your project will have:
 
 ```
 MyGame/
-├── .gdignore              # Exclude editor cache from export
 ├── .gitignore             # Version control ignores
 ├── project.godot          # Project configuration
 ├── scenes/                # Scene files (.tscn)
@@ -54,13 +53,14 @@ MyGame/
 ├── resources/             # Resource files (.tres, .res)
 │   ├── data/             # Game data (items, skills, etc.)
 │   └── config/           # Configuration resources
-├── assets/               # Raw assets (do not edit in Godot)
+├── assets/               # Imported assets (textures, audio, fonts, models)
 │   ├── textures/
 │   ├── audio/
 │   ├── fonts/
 │   └── models/
+├── art_source/           # Source files Godot must not import (has a .gdignore)
 ├── levels/               # Level data and configurations
-└── export_presets.cfg    # Export presets (auto-generated)
+└── export_presets.cfg    # Export presets (created by the Export dialog)
 ```
 
 ## Project.godot Configuration
@@ -74,8 +74,8 @@ config/icon="res://assets/icons/icon.png"
 
 [display]
 
-window/size/width=1280
-window/size/height=720
+window/size/viewport_width=1280
+window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 
 [rendering]
@@ -85,11 +85,12 @@ renderer/rendering_method="forward_plus"
 
 ## .gdignore Setup
 
-Create `.gdignore` in directories that Godot should not import:
+An empty `.gdignore` file makes the editor skip its whole folder: nothing in it is imported
+or usable from `res://`. Put it only in folders with files that are not game assets — layered
+source art, `.blend` backups, design documents:
 
-```
-# In assets/ directory
-# Godot ignores this directory for resource imports
+```bash
+touch art_source/.gdignore   # never in assets/: the game could no longer load those files
 ```
 
 ## GDScript Project Initialization
@@ -105,56 +106,31 @@ Standard project.godot autoload setup:
 
 ## C# Mono Project Initialization
 
-For C# projects, the scaffolded project includes:
-
-- `.csproj` file configured for Godot 4.x
-- `global.json` for .NET version pinning
-- Standard namespace structure matching directory layout
-- `[Export]` attribute patterns in template scripts
+For C# projects, use the .NET build of the editor: it creates the `.csproj` and `.sln` the
+first time you add a C# script (**Project > Tools > C# > Create C# solution**). Commit both
+files. The scaffolding script creates a GDScript-only project.
 
 ## Godot 4.7 Specific Setup
 
 When creating projects with Godot 4.7 features:
 
-1. **HDR Settings** — Enable in project.godot:
+1. **HDR output** — opt in for HDR-capable displays:
    ```ini
-   [rendering]
-   environment/default_environment="default_world.tres"
+   [display]
+   window/hdr/request_hdr_output=true
    ```
 
-2. **Steam Frame Configuration** — Add to project.godot:
-   ```ini
-   [steam]
-   app_id="YOUR_APP_ID"
-   ```
+2. **VirtualJoystick** — use the built-in node for mobile projects instead of third-party solutions
 
-3. **VirtualJoystick** — Use built-in node for mobile projects instead of third-party solutions
-
-4. **Export Presets** — Configure for:
-   - Windows Desktop (64-bit)
-   - Linux/X11 (64-bit)
-   - Android (API 31+)
-   - HTML5 (Web)
+3. **Export Presets** — configure the platforms you ship: Windows, macOS, Linux, Android, iOS, Web
 
 ## Export Presets
 
 Common export configurations:
 
-| Target | Settings | Notes |
-|--------|----------|-------|
-| Windows | Desktop, 64-bit, D3D12 | Default for PC games |
-| Linux | Desktop, 64-bit, Vulkan | Requires vulkan drivers |
-| Android | Mobile, API 31+, ARM64 | Use VirtualJoystick for controls |
-| HTML5 | Web, WASM | Limited to web-compatible features |
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools can inspect and modify your project live:
-
-- **`project_settings_read`** — Read current project.godot settings
-- **`project_settings_set`** — Modify project settings (e.g., enable HDR, set Steam app ID)
-- **`file_browse`** — List project directories to verify scaffold structure
-- **`file_write`** — Write configuration files directly
-- **`class_db_info`** — Query Godot class database for export preset node types
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.
+| Target | Renderer default | Notes |
+|--------|------------------|-------|
+| Windows | Forward+ (Vulkan; D3D12 selectable) | Default for PC games |
+| Linux | Forward+ (Vulkan) | Needs Vulkan drivers; Compatibility renderer as fallback |
+| Android | Compatibility on mobile by default | Use VirtualJoystick for touch controls |
+| Web | Compatibility only | Limited to web-compatible features |

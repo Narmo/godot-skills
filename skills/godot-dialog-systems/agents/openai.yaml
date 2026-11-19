@@ -1,14 +1,10 @@
 # OpenAI / Codex CLI extension for godot-dialog-systems
 # Safely ignored by other agents per Agent Skills Open Standard
+# Codex reads interface (UI metadata), policy and dependencies from this file.
+
+interface:
+  display_name: "Godot Dialog Systems"
+  short_description: "Dialogue system patterns for Godot 4.x"
 
 policy:
-  safe: true
-  no_network: true
-
-when_to_use:
-  - "building dialogue systems in Godot"
-  - "Godot branching narrative"
-  - "NPC conversation Godot"
-  - "typewriter text effect Godot"
-  - "resource-based dialogue Godot"
-  - "voice sync Godot"
+  allow_implicit_invocation: true

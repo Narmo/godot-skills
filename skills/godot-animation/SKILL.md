@@ -35,42 +35,46 @@ Comprehensive patterns for character animation, state machines, and visual effec
 Use AnimationPlayer for linear sequences, cutscenes, and simple property animations.
 
 ```gdscript
-@onready var anim_player = $AnimationPlayer
+@onready var anim_player: AnimationPlayer = $AnimationPlayer
 
-func play_attack():
-    anim_player.play("attack")
 
-func play_transition(target: String, fade_time: float = 0.2):
-    anim_player.play(target, fade_time)
-
-# Signal-based animation completion
-func _ready():
+func _ready() -> void:
+    # Signal-based animation completion
     anim_player.animation_finished.connect(_on_animation_finished)
 
-func _on_animation_finished(anim_name: String):
-    if anim_name == "attack":
+
+func play_attack() -> void:
+    anim_player.play("attack")
+
+
+func play_transition(target: StringName, fade_time: float = 0.2) -> void:
+    anim_player.play(target, fade_time)  # second argument is the crossfade time
+
+
+func _on_animation_finished(anim_name: StringName) -> void:
+    if anim_name == &"attack":
         print("Attack animation complete")
 ```
 
 ### AnimationTree — State Machine Animations
 
-Use AnimationTree for complex character animations with branching states (idle, walk, run, jump).
+Use AnimationTree for complex character animations with branching states (idle, walk, run,
+jump). It updates itself every frame; you only set parameters and request states.
 
 ```gdscript
-@onready var anim_tree = $AnimationTree
-@onready var anim_state = anim_tree.get("state_machine")
+@onready var anim_tree: AnimationTree = $AnimationTree
+# The playback object of the root AnimationNodeStateMachine
+@onready var playback: AnimationNodeStateMachinePlayback = anim_tree.get("parameters/playback")
 
-func _ready():
-    anim_state.travel("Idle")  # Start at Idle state
 
-func set_animation(state_name: String):
-    if anim_state.has_state(state_name):
-        anim_state.travel(state_name)
+func _ready() -> void:
+    playback.start("Idle")
 
-func _physics_process(delta: float):
-    var speed = velocity.length()
-    anim_tree.set("parameters/Move/speed", speed)
-    anim_tree.process(delta)
+
+func set_animation(state_name: StringName) -> void:
+    var state_machine := anim_tree.tree_root as AnimationNodeStateMachine
+    if state_machine and state_machine.has_node(state_name):
+        playback.travel(state_name)  # follows the transitions to get there
 ```
 
 ### When to Use Which
@@ -80,7 +84,7 @@ func _physics_process(delta: float):
 | Cutscenes, UI animations | AnimationPlayer |
 | Character movement states | AnimationTree + StateMachine |
 | Simple one-shot effects | AnimationPlayer |
-| Blending between movements | AnimationTree + BlendSpace2D |
+| Blending between movements | AnimationTree + BlendSpace1D/2D |
 | Complex combat combos | AnimationTree + AnimationNodeBlendTree |
 
 ## State Machines in AnimationTree
@@ -91,33 +95,37 @@ func _physics_process(delta: float):
 # In the AnimationTree, create an AnimationNodeStateMachine:
 # States: Idle, Walk, Run, Jump, Fall, Attack
 # Transitions: Idle <-> Walk, Idle <-> Run, Walk -> Run, etc.
+extends CharacterBody2D
 
-@onready var anim_tree = $AnimationTree
-@onready var state_machine = anim_tree.get("state_machine")
+@export var run_threshold: float = 150.0
 
-func _physics_process(delta: float):
-    var speed = velocity.length()
-    var new_state = "Idle"
-    
+@onready var anim_tree: AnimationTree = $AnimationTree
+@onready var playback: AnimationNodeStateMachinePlayback = anim_tree.get("parameters/playback")
+
+
+func _physics_process(_delta: float) -> void:
+    var speed := velocity.length()
+    var new_state := &"Idle"
+
     if not is_on_floor():
-        new_state = "Fall" if velocity.y < 0 else "Jump"
+        new_state = &"Jump" if velocity.y < 0.0 else &"Fall"  # -Y is up in 2D
     elif speed > 0.1:
-        new_state = "Run" if speed > run_threshold else "Walk"
-    
-    # Only transition if the target state exists
-    if state_machine.has_state(new_state):
-        state_machine.travel(new_state)
-    
-    anim_tree.set("parameters/Move/speed", speed)
-    anim_tree.process(delta)
+        new_state = &"Run" if speed > run_threshold else &"Walk"
+
+    if playback.get_current_node() != new_state:
+        playback.travel(new_state)
 ```
 
 ### Transition Conditions
 
 Set transition conditions in the AnimationTree editor:
-- **Blend**: Use blend amounts based on parameters (e.g., speed)
-- **One Shot**: Play once then return (for attacks, interactions)
-- **Transition Rules**: Define when transitions are allowed
+- **Advance condition**: a named boolean (`parameters/conditions/<name>`) that allows the transition
+- **Advance expression**: a GDScript expression evaluated on the tree's `advance_expression_base_node`
+- **Switch mode**: immediate, sync, or at the end of the current animation
+
+```gdscript
+anim_tree.set("parameters/conditions/is_attacking", true)
+```
 
 ## Blend Spaces
 
@@ -126,172 +134,133 @@ Set transition conditions in the AnimationTree editor:
 Use for animations ordered along a single axis (e.g., walk speed).
 
 ```gdscript
-# AnimationTree setup:
-# BlendSpace1D: Walk -> Run -> Sprint
-# Parameter: "speed" (float)
-
-anim_tree.set("parameters/BlendSpace1D/speed", current_speed)
+# AnimationTree setup: BlendSpace1D node named "Locomotion" with Walk -> Run -> Sprint
+anim_tree.set("parameters/Locomotion/blend_position", current_speed)
 ```
 
 ### 2D Blend Space
 
-Use for directional movement blending.
+Use for directional movement blending (8-directional characters, strafing).
 
 ```gdscript
-# AnimationTree setup:
-# BlendSpace2D: X = speed, Y = direction blend
-# Parameters: "speed" and "direction"
-
-anim_tree.set("parameters/BlendSpace2D/speed", velocity.length())
-anim_tree.set("parameters/BlendSpace2D/direction", velocity.angle())
+# AnimationTree setup: BlendSpace2D node named "Move", animations placed at
+# (0, -1) up, (1, 0) right, (0, 1) down, (-1, 0) left, and the diagonals
+func _physics_process(_delta: float) -> void:
+    if velocity.length() > 0.1:
+        anim_tree.set("parameters/Move/blend_position", velocity.normalized())
 ```
 
-### Directional Blend Space (Godot 4.x)
-
-Use a directional blend for 8-directional character animations.
-
-```gdscript
-# Set up AnimationNodeBlendDBone2D for directional blending
-@onready var anim_tree = $AnimationTree
-
-func _physics_process(delta: float):
-    var dir = velocity.normalized()
-    anim_tree.set("parameters/Directional/speed", velocity.length())
-    anim_tree.set("parameters/Directional/direction", dir)
-    anim_tree.process(delta)
-```
 ## Animation Libraries and Blending Tracks
 
 ### Animation Libraries
 
-Group related animations into libraries for organization.
+Group related animations into libraries for organization. Animations in a named library are
+played as `"library_name/animation_name"`; the default library has an empty name.
 
 ```gdscript
-# Access library animations by name
-@onready var anim_player = $AnimationPlayer
+@onready var anim_player: AnimationPlayer = $AnimationPlayer
 
-func play_animation(anim_name: String):
-    # Animations are organized by library in the editor
-    anim_player.play(anim_name)
 
-# List available animations
-func get_available_animations() -> Array:
+func play_animation(anim_name: StringName) -> void:
+    anim_player.play(anim_name)  # e.g. "combat/slash"
+
+
+# List available animations (with library prefixes)
+func get_available_animations() -> PackedStringArray:
     return anim_player.get_animation_list()
 ```
 
-### Blending Tracks
-
-Blend between multiple animation tracks for smooth transitions.
+### Blending
 
 ```gdscript
-# Set blend amount in AnimationTree
-anim_tree.set("parameters/Idle/blend_amount", 1.0)
+# AnimationPlayer plays one animation at a time; crossfade with custom_blend
+anim_player.play("idle", 1.0)        # 1 s crossfade from the current animation
+anim_player.play("walk", 0.5, 1.5)   # 0.5 s crossfade, 1.5x speed
 
-# Blend between two animations
-anim_player.play("idle", -1.0, 1.0)  # loop, 1s fade-in
-anim_player.play("walk", -1.0, 0.5)  # loop, 0.5s fade-in
-
-# Crossfade by playing both simultaneously
-# The AnimationTree blend space handles the mixing
+# Mixing animations at the same time is the AnimationTree's job, e.g. a Blend2 node:
+anim_tree.set("parameters/UpperBody/blend_amount", 1.0)
 ```
+
 ## Root Motion for Character Movement
 
 ### Using Root Motion in AnimationTree
 
-Root motion applies bone animation directly to the character transform.
+Root motion moves the character by the root bone's animated offset instead of by script.
+Set **AnimationTree > Root Motion > Track** to the root bone first.
 
 ```gdscript
-class_name RootMotionCharacter extends CharacterBody3D
-
-@onready var anim_tree = $AnimationTree
-@onready var anim_state = anim_tree.get("state_machine")
+class_name RootMotionCharacter
+extends CharacterBody3D
 
 @export var root_motion_enabled: bool = true
+@export var speed: float = 4.0
 
-func _physics_process(delta: float):
-    # Calculate root motion displacement
-    var prev_transform = global_transform
-    
-    # Process animation tree (applies root motion)
-    anim_tree.process(delta)
-    
+@onready var anim_tree: AnimationTree = $AnimationTree
+
+
+func _physics_process(delta: float) -> void:
     if root_motion_enabled:
-        var root_delta = global_transform.xform_inv(prev_transform)
-        velocity = Vector3(root_delta.origin.x / delta, 0, root_delta.origin.z / delta)
+        # This frame's root offset, in the model's local space
+        var motion := anim_tree.get_root_motion_position()
+        velocity = (global_basis * motion) / delta
     else:
         # Use scripted movement instead
-        velocity = transform.basis.z * speed
-    
+        velocity = -global_basis.z * speed
+
+    if not is_on_floor():
+        velocity += get_gravity() * delta
     move_and_slide()
 ```
 
 ### When to Use Root Motion
-- Platformer jump arcs (precise landing positions)
 - Attack animations with fixed reach distances
+- Climbing, vaulting and other moves that must match the animation exactly
 - Cutscene character movements
 
 ### When to Avoid Root Motion
 - Multiplayer games (server authority conflicts)
-- Characters that need precise position control
+- Characters that need precise, responsive position control (platformers)
 - Games with custom physics responses
+
 ## Godot 4.7 Animation Features
 
-### Collapsible Animation Tracks
+### Collapsible Animation Editor Nodes
 
-Godot 4.7 introduces collapsible animation tracks for better organization in the AnimationPlayer editor.
+Godot 4.7 lets you collapse the tracks of a node in the Animation panel; a collapsed node shows
+an aggregate row of its keys. No code change needed — it is an editor feature.
 
-```gdscript
-# No code change needed — this is an editor feature
-# In the AnimationPlayer inspector, click track headers to collapse/expand
-# Group related properties under collapsible sections
-```
+### Tween.tween_await() for Sequential Animations
 
-### tween_await() for Sequential Animations
-
-Use await with tweens for clean sequential animation chains.
+`Tween.tween_await(signal)` pauses a tween until the signal is emitted, so one tween can wait
+for an AnimationPlayer, a dialogue box, or any other event:
 
 ```gdscript
-func play_combo_animation():
-    # Chain animations without nested callbacks
-    await create_tween().tween_property($Sprite, "offset:x", 10.0, 0.1).finished
-    await create_tween().tween_property($Sprite, "offset:x", 0.0, 0.1).finished
+func play_combo() -> void:
+    var tween := create_tween()
+    tween.tween_property($Sprite, "offset:x", 10.0, 0.1)
+    tween.tween_callback(anim_player.play.bind("attack"))
+    tween.tween_await(anim_player.animation_finished)  # wait for the attack to end
+    tween.tween_property($Sprite, "offset:x", 0.0, 0.1)
+    await tween.finished
     print("Combo animation complete")
-
-# Or with AnimationPlayer
-func play_with_wait():
-    var tween = create_tween()
-    anim_player.play("attack")
-    await tween.tween_interval(0.5)
-    anim_player.play("recovery")
 ```
+
 ## Animation Performance Tips
 
 - Use **AnimationTree** with state machines instead of multiple AnimationPlayers
 - Keep animation libraries small and focused
-- Use **AnimationNodeSync** to synchronize multiple character animations
-- Preload animation resources with preload() for always-needed scenes
-- Avoid animating properties that can be set directly (e.g., position vs tween)
-- Use `animation_finished` signal instead of polling for completion
+- Enable **sync** on blend nodes so blended animations stay in step
+- Use the `animation_finished` signal instead of polling for completion
+- Pause off-screen characters' trees with `anim_tree.active = false`
 
 ## Quick Reference: Animation Methods
 
 | Method | Use Case |
 |--------|----------|
 | `anim_player.play(name)` | Start an animation |
-| `anim_player.play(name, fade_time)` | Crossfade to animation |
-| `anim_tree.process(delta)` | Update state machine |
-| `anim_tree.set("params/...", value)` | Set blend parameters |
-| `state_machine.travel(name)` | Switch to a state |
+| `anim_player.play(name, blend_time)` | Crossfade to animation |
+| `anim_tree.set("parameters/...", value)` | Set blend positions and conditions |
+| `playback.travel(name)` | Switch to a state through transitions |
 | `create_tween()` | Create animation tweens |
+| `tween.tween_await(signal)` | Pause a tween until a signal fires (4.7) |
 | `await tween.finished` | Wait for tween completion |
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools enhance animation debugging:
-
-- **`animation_play`** — Play any animation from the project without opening the editor
-- **`animation_list`** — List all available animations and their libraries
-- **`animation_state_get`** — Query current AnimationTree state machine status
-- **`animation_preview_frame`** — Preview a specific frame of any animation
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.

@@ -1,14 +1,10 @@
 # OpenAI / Codex CLI extension for godot-inventory-economy
 # Safely ignored by other agents per Agent Skills Open Standard
+# Codex reads interface (UI metadata), policy and dependencies from this file.
+
+interface:
+  display_name: "Godot Inventory & Economy"
+  short_description: "Inventory and economy patterns for Godot 4.x"
 
 policy:
-  safe: true
-  no_network: true
-
-when_to_use:
-  - "building inventory systems in Godot"
-  - "Godot item management"
-  - "game economy Godot"
-  - "drag-drop inventory Godot"
-  - "equip system Godot"
-  - "shop system Godot"
+  allow_implicit_invocation: true

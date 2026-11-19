@@ -28,144 +28,150 @@ metadata:
 
 Comprehensive patterns for physics, collisions, and movement in Godot 4.x.
 
-## Collision Layers and Masks (Godot 4.x Typed System)
+## Collision Layers and Masks
 
-Godot 4.x uses bit-based collision layer/mask system for efficient spatial queries.
+Every collision object (bodies and areas) has 32 layers. `collision_layer` says which layers
+the object **is on**; `collision_mask` says which layers it **detects**.
 
 ### Configuring Collision Layers
 
-Set layers in the editor via Inspector > CollisionShape3D > Collision Layer (bits 1-32).
+Set them on the body or area in the Inspector (**Collision > Layer / Mask**), and name the
+layers in Project Settings > Layer Names so the checkboxes are readable.
 
 ```gdscript
-# Recommended layer layout
-const LAYER_PLAYER = 0x1
-const LAYER_ENEMIES = 0x2
-const LAYER_PROJECTILES = 0x4
-const LAYER_ENVIRONMENT = 0x8
-const LAYER_PICKUPS = 0x10
-const LAYER_TRIGGERS = 0x20
+# Bit values for the recommended layout below
+const LAYER_PLAYER := 1 << 0        # layer 1
+const LAYER_ENEMIES := 1 << 1       # layer 2
+const LAYER_PROJECTILES := 1 << 2   # layer 3
+const LAYER_ENVIRONMENT := 1 << 3   # layer 4
+const LAYER_PICKUPS := 1 << 4       # layer 5
+const LAYER_TRIGGERS := 1 << 5      # layer 6
 
-collision_layer = LAYER_PLAYER
-collision_mask = LAYER_ENVIRONMENT | LAYER_PICKUPS
+
+func _ready() -> void:
+    collision_layer = LAYER_PLAYER
+    collision_mask = LAYER_ENVIRONMENT | LAYER_PICKUPS
+    # Same thing by layer number:
+    set_collision_mask_value(4, true)
 ```
 
 ### Layer Design Best Practices
 
-| Layer | Bit | Use Case |
-|-------|-----|----------|
+| Layer | Bit value | Use Case |
+|-------|-----------|----------|
 | 1 | `0x1` | Player characters |
 | 2 | `0x2` | Enemies and NPCs |
-| 4 | `0x4` | Projectiles and weapons |
-| 8 | `0x8` | Environment / terrain |
-| 16 | `0x10` | Pickups and collectibles |
-| 32 | `0x20` | Triggers (Area-only) |
+| 3 | `0x4` | Projectiles and weapons |
+| 4 | `0x8` | Environment / terrain |
+| 5 | `0x10` | Pickups and collectibles |
+| 6 | `0x20` | Triggers (Area-only) |
 
-### Typed Collision Queries
+### Raycast Queries
 
 ```gdscript
-var ray_query := PhysicsRayQueryParameters3D.new()
-ray_query.from = camera.global_position
-ray_query.to = global_position + forward * range
-ray_query.collision_mask = LAYER_ENVIRONMENT
-ray_query.exclude = [self]
-
-var result = get_world_3d().direct_space.intersect_ray(ray_query)
-if result:
-    var collider = result.get("collider")
-    print("Hit: ", collider.get_name())
+func raycast_forward(max_distance: float) -> Dictionary:
+    var from := global_position
+    var to := from + -global_transform.basis.z * max_distance  # -Z is forward
+    var query := PhysicsRayQueryParameters3D.create(from, to, LAYER_ENVIRONMENT, [get_rid()])
+    var result := get_world_3d().direct_space_state.intersect_ray(query)
+    if result:
+        print("Hit: ", result["collider"].name, " at ", result["position"])
+    return result
 ```
+
+Query the space state only in `_physics_process` — that is when it is safe to read.
 
 ## Rigid Body Dynamics
 
-### Basic Rigid Body Setup
+### Forces and Impulses
+
+`RigidBody3D` is moved by the physics engine; push it, don't set its position.
 
 ```gdscript
-class_name PlayerRigidBody extends CharacterBody3D
+class_name Crate
+extends RigidBody3D
 
-@export var gravity_scale: float = 1.0
-@export var jump_force: float = 8.0
-@export var move_speed: float = 5.0
 
-var velocity := Vector3.ZERO
+func _ready() -> void:
+    gravity_scale = 1.0
+    var bouncy := PhysicsMaterial.new()
+    bouncy.bounce = 0.8
+    bouncy.friction = 0.2
+    physics_material_override = bouncy
 
-func _physics_process(delta: float) -> void:
-    velocity.y -= 9.8 * gravity_scale * delta
-    var input_dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-    velocity.x = input_dir.x * move_speed
-    velocity.z = input_dir.y * move_speed
-    move_and_slide()
-    if is_on_floor() and Input.is_action_just_pressed("jump"):
-        velocity.y = jump_force
+
+func kick(direction: Vector3, strength: float) -> void:
+    apply_central_impulse(direction.normalized() * strength)  # one-off push
+
+
+func _physics_process(_delta: float) -> void:
+    apply_central_force(Vector3.UP * 2.0)  # continuous force, applied every tick
 ```
 
-### Physics Material
+### Rigid Body Projectile
 
 ```gdscript
-var bouncy_material := PhysicsMaterial.new()
-bouncy_material.bounce = 0.8
-bouncy_material.friction = 0.2
-collision_shape.shape.material = bouncy_material
-```
-
-### Rigid Body with Forces
-
-```gdscript
-class_name Projectile extends RigidBody3D
+class_name Projectile
+extends RigidBody3D
 
 @export var lifetime: float = 3.0
 @export var damage: int = 10
+@export var speed: float = 20.0
+
 
 func _ready() -> void:
-    linear_velocity = transform.basis.z * 20.0
+    # body_entered only fires with contact monitoring on.
+    contact_monitor = true
+    max_contacts_reported = 1
+    body_entered.connect(_on_body_entered)
+    linear_velocity = -global_transform.basis.z * speed
     get_tree().create_timer(lifetime).timeout.connect(queue_free)
 
-func _on_body_entered(body: Node3D) -> void:
-    if body is Enemy:
+
+func _on_body_entered(body: Node) -> void:
+    if body.has_method("take_damage"):
         body.take_damage(damage)
-        queue_free()
+    queue_free()
 ```
 
 ## Character Controllers
 
+`CharacterBody2D/3D` already has a `velocity` property; set it and call `move_and_slide()`.
+
 ### CharacterBody3D Movement Pattern
 
 ```gdscript
-class_name ThirdPersonController extends CharacterBody3D
+class_name ThirdPersonController
+extends CharacterBody3D
 
 @export var walk_speed: float = 4.0
-@export var run_speed: float = 8.0
 @export var jump_velocity: float = 4.5
-@export var gravity_amount: float = 9.8
 @export var sprint_factor: float = 2.0
 
-var _is_sprinting := false
 
 func _physics_process(delta: float) -> void:
     if not is_on_floor():
-        velocity.y -= gravity_amount * delta
+        velocity += get_gravity() * delta  # project gravity plus any Area3D overrides
     if is_on_floor() and Input.is_action_just_pressed("jump"):
         velocity.y = jump_velocity
-    var input_dir := Vector2.ZERO
-    input_dir = Vector2(
-        Input.get_axis("move_left", "move_right"),
-        Input.get_axis("move_up", "move_down")
-    )
-    _is_sprinting = Input.is_action_pressed("sprint")
-    var direction := (transform.basis * Vector3(input_dir.x, 0, input_dir.y)).normalized()
+
+    var input_dir := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+    var direction := (transform.basis * Vector3(input_dir.x, 0.0, input_dir.y)).normalized()
+    var speed := walk_speed * (sprint_factor if Input.is_action_pressed("sprint") else 1.0)
     if direction:
-        var spd = run_speed * sprint_factor if _is_sprinting else walk_speed
-        velocity.x = direction.x * spd
-        velocity.z = direction.z * spd
+        velocity.x = direction.x * speed
+        velocity.z = direction.z * speed
     else:
-        velocity.x = move_toward(velocity.x, 0, walk_speed)
-        velocity.z = move_toward(velocity.z, 0, walk_speed)
+        velocity.x = move_toward(velocity.x, 0.0, walk_speed)
+        velocity.z = move_toward(velocity.z, 0.0, walk_speed)
     move_and_slide()
 ```
 
 ### CharacterBody2D Platformer Pattern
 
 ```gdscript
-class_name PlatformerCharacter extends CharacterBody2D
+class_name PlatformerCharacter
+extends CharacterBody2D
 
 @export var speed: float = 200.0
 @export var jump_force: float = -450.0
@@ -174,60 +180,70 @@ class_name PlatformerCharacter extends CharacterBody2D
 @export var acceleration: float = 800.0
 @export var friction: float = 600.0
 
+
 func _physics_process(delta: float) -> void:
     if not is_on_floor():
-        velocity.y += gravity * delta
-        velocity.y = min(velocity.y, max_fall_speed)
+        velocity.y = minf(velocity.y + gravity * delta, max_fall_speed)
     if is_on_floor() and Input.is_action_just_pressed("jump"):
         velocity.y = jump_force
     var move_input := Input.get_axis("move_left", "move_right")
     if move_input:
         velocity.x = move_toward(velocity.x, move_input * speed, acceleration * delta)
     else:
-        velocity.x = move_toward(velocity.x, 0, friction * delta)
+        velocity.x = move_toward(velocity.x, 0.0, friction * delta)
     move_and_slide()
 ```
+
+For slopes and moving platforms, tune `floor_snap_length`, `floor_max_angle` and
+`floor_stop_on_slope`; call `apply_floor_snap()` to stick to the floor after a teleport.
 
 ## Area Nodes for Triggers and Detection
 
 ### Basic Pickup Zone
 
 ```gdscript
-class_name PickupZone extends Area3D
+class_name PickupZone
+extends Area3D
 
 @export var pickup_scene: PackedScene
 @export var min_items: int = 1
 @export var max_items: int = 3
+
 var _has_been_activated := false
+
 
 func _ready() -> void:
     body_entered.connect(_on_body_entered)
 
+
 func _on_body_entered(body: Node3D) -> void:
-    if _has_been_activated: return
-    if body is CharacterBody3D:
-        _spawn_items()
-        _has_been_activated = true
-        queue_free()
+    if _has_been_activated or not body is CharacterBody3D:
+        return
+    _has_been_activated = true
+    _spawn_items()
+    queue_free()
+
 
 func _spawn_items() -> void:
-    var count = randi() % (max_items - min_items + 1) + min_items
-    for i in range(count):
-        var item = pickup_scene.instantiate()
-        item.position = global_position + Vector3(randf() * 2 - 1, 0.5, randf() * 2 - 1)
-        get_tree().root.add_child(item)
+    for i in randi_range(min_items, max_items):
+        var item: Node3D = pickup_scene.instantiate()
+        item.position = global_position + Vector3(randf_range(-1.0, 1.0), 0.5, randf_range(-1.0, 1.0))
+        # Physics callbacks can't add collision objects directly; defer to after the step.
+        get_tree().current_scene.add_child.call_deferred(item)
 ```
 
 ### Enemy Detection Sensor
 
 ```gdscript
-class_name EnemySensor extends Area3D
+class_name EnemySensor
+extends Area3D
 
 signal player_detected(player: CharacterBody3D)
 signal player_lost(player: CharacterBody3D)
 
 @export var detection_radius: float = 10.0
-@export var detection_layers: int = 0x1
+@export_flags_3d_physics var detection_layers: int = 1
+
 
 func _ready() -> void:
     body_entered.connect(_on_body_entered)
@@ -237,46 +253,47 @@ func _ready() -> void:
     $CollisionShape3D.shape = sphere
     collision_mask = detection_layers
 
+
 func _on_body_entered(body: Node3D) -> void:
     if body is CharacterBody3D:
         player_detected.emit(body)
+
 
 func _on_body_exited(body: Node3D) -> void:
     if body is CharacterBody3D:
         player_lost.emit(body)
 ```
 
-## Physics Interpolation (Godot 4.x Feature)
+## Physics Interpolation
 
-Godot 4.x supports physics interpolation for smooth rendering between physics ticks.
+Physics interpolation renders moving objects smoothly between physics ticks, so a 30 Hz
+physics rate still looks fluid at a 144 Hz display. Godot 4.3 added it for 2D and 4.4 for 3D.
 
-### Enabling Physics Interpolation
-
-Enable in Project Settings > Rendering > Other > Physics Interpolation set to "Interpolate". The engine automatically interpolates transforms between physics ticks when rendering. No extra code needed for standard nodes.
-
-For custom rendering, use the built-in interpolation factor available through the rendering pipeline.
+- Enable **Project Settings > Physics > Common > Physics Interpolation** (`physics/common/physics_interpolation`)
+- Move objects in `_physics_process`, not `_process`
+- After teleporting an object, call `reset_physics_interpolation()` so it doesn't visibly slide to the new spot
+- Custom drawing can read `Engine.get_physics_interpolation_fraction()`
 
 ## Performance: Bulk Physics Queries
 
-### Space State Batched Queries
+### Shape Queries
 
 ```gdscript
-func get_all_collisions_in_area(origin: Vector3, radius: float, mask: int) -> Array:
-    var query := PhysicsShapeQueryParameters3D.new()
+func get_all_collisions_in_area(origin: Vector3, radius: float, mask: int) -> Array[Dictionary]:
     var sphere := SphereShape3D.new()
     sphere.radius = radius
+    var query := PhysicsShapeQueryParameters3D.new()
     query.shape = sphere
-    query.transform = Transform3D.IDENTITY.translated(origin)
+    query.transform = Transform3D(Basis(), origin)
     query.collision_mask = mask
-    query.exclude = [self]
-    var space = get_world_3d().direct_space
-    return space.intersect_shape(query)
+    query.exclude = [get_rid()]
+    return get_world_3d().direct_space_state.intersect_shape(query)
+
 
 func aoe_attack(center: Vector3, radius: float, damage: int) -> void:
-    var hits := get_all_collisions_in_area(center, radius, LAYER_ENEMIES | LAYER_PROJECTILES)
-    for hit in hits:
-        var collider = hit.get("collider")
-        if collider is Enemy:
+    for hit in get_all_collisions_in_area(center, radius, LAYER_ENEMIES):
+        var collider: Object = hit["collider"]
+        if collider.has_method("take_damage"):
             collider.take_damage(damage)
 ```
 
@@ -287,28 +304,11 @@ func aoe_attack(center: Vector3, radius: float, damage: int) -> void:
 - Use small-radius `Area3D` nodes for proximity checks
 - Avoid querying the entire world every frame
 
-## Godot 4.7 Physics Notes
-
-- Physics interpolation is more robust with improved accuracy
-- Use `AreaLight3D` for dynamic light casting on visible surfaces
-- Test physics performance with Perfetto tracing on mobile targets
-
 ## Quick Reference: Movement Methods
 
 | Method | Use Case | Returns |
 |--------|----------|---------|
-| `move_and_slide()` | Standard character movement | SlideFlags |
-| `move_and_collide()` | When you need collision info | CollisionData or null |
-| `move_and_snap()` | Platformer with snap-to-floor | SlideFlags |
-| `move_teleport()` | Teleportation (no sliding) | CollisionData or null |
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools enhance physics debugging:
-
-- **`physics_debug_draw`** — Toggle collision shape visualization in editor
-- **`physics_query_shape`** — Run shape queries from any position without placing nodes
-- **`rigid_body_apply_force`** — Apply forces to rigid bodies for testing
-- **`physics_stats`** — View active physics bodies, sleep count, and frame cost
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.
+| `move_and_slide()` | Standard character movement using `velocity` | `bool` — true if it collided |
+| `move_and_collide(motion)` | Move once and handle the collision yourself | `KinematicCollision2D/3D` or `null` |
+| `apply_floor_snap()` | Stick to the floor after a teleport or spawn | — |
+| `RigidBody3D.apply_central_impulse()` | One-off push on a rigid body | — |

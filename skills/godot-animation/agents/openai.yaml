@@ -1,14 +1,10 @@
 # OpenAI / Codex CLI extension for godot-animation
 # Safely ignored by other agents per Agent Skills Open Standard
+# Codex reads interface (UI metadata), policy and dependencies from this file.
+
+interface:
+  display_name: "Godot Animation"
+  short_description: "Animation systems for Godot 4.x"
 
 policy:
-  safe: true
-  no_network: true
-
-when_to_use:
-  - "animation systems in Godot"
-  - "Godot AnimationTree and state machines"
-  - "Godot blend spaces"
-  - "Godot skeleton IK"
-  - "Godot sprite animation"
-  - "Godot animation blending"
+  allow_implicit_invocation: true

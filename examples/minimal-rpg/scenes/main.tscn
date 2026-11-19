@@ -1,99 +1,198 @@
-[gd_scene load_steps=4 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="Script" path="res://scripts/game_controller.gd" id="1_ctrl"]
 [ext_resource type="Script" path="res://scripts/player.gd" id="2_player"]
 [ext_resource type="Script" path="res://scripts/collectible.gd" id="3_collectible"]
+[ext_resource type="Script" path="res://scripts/npc.gd" id="4_npc"]
+[ext_resource type="Script" path="res://scripts/inventory_ui.gd" id="5_inventory"]
 
-[node name="Main" type="Node"]
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_body"]
+size = Vector2(28, 28)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_item"]
+size = Vector2(16, 16)
+
+[sub_resource type="CircleShape2D" id="CircleShape2D_talk"]
+radius = 56.0
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_wall_h"]
+size = Vector2(960, 20)
+
+[sub_resource type="RectangleShape2D" id="RectangleShape2D_wall_v"]
+size = Vector2(20, 640)
+
+[node name="Main" type="Node2D"]
+
+[node name="GameController" type="Node" parent="." node_paths=PackedStringArray("pause_label")]
+process_mode = 3
 script = ExtResource("1_ctrl")
+pause_label = NodePath("../HUD/PauseLabel")
 
-[node name="Player" type="CharacterBody2D" parent="."]
-position = Vector2(480, 320)
+[node name="Player" type="CharacterBody2D" parent="." groups=["player"]]
+position = Vector2(480, 400)
+collision_mask = 10
+motion_mode = 1
 script = ExtResource("2_player")
 
-[node name="Sprite2D" type="ColorRect" parent="Player"]
-size = Vector2(32, 32)
-color = Color(0.2, 0.6, 1.0, 1.0)
+[node name="Body" type="ColorRect" parent="Player"]
+offset_left = -14.0
+offset_top = -14.0
+offset_right = 14.0
+offset_bottom = 14.0
+mouse_filter = 2
+color = Color(0.2, 0.6, 1, 1)
 
 [node name="CollisionShape2D" type="CollisionShape2D" parent="Player"]
+shape = SubResource("RectangleShape2D_body")
 
-[node name="Collectible1" type="Area2D" parent="."]
-position = Vector2(300, 200)
+[node name="Gem" type="Area2D" parent="."]
+position = Vector2(300, 260)
+collision_layer = 4
 script = ExtResource("3_collectible")
 
-[node name="Sprite2D" type="ColorRect" parent="Collectible1"]
-size = Vector2(16, 16)
-color = Color(1.0, 0.8, 0.0, 1.0)
+[node name="Body" type="ColorRect" parent="Gem"]
+offset_left = -8.0
+offset_top = -8.0
+offset_right = 8.0
+offset_bottom = 8.0
+mouse_filter = 2
+color = Color(1, 0.8, 0, 1)
 
-[node name="Label" type="Label" parent="Collectible1"]
-offset_left = -20.0
-offset_top = -40.0
-offset_right = 36.0
-offset_bottom = -20.0
-text = "1x gem"
+[node name="Label" type="Label" parent="Gem"]
+offset_left = -30.0
+offset_top = -36.0
+offset_right = 30.0
+offset_bottom = -13.0
+horizontal_alignment = 1
 
-[node name="Collectible2" type="Area2D" parent="." instance=ExtResource("3_collectible")]
-position = Vector2(600, 400)
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Gem"]
+shape = SubResource("RectangleShape2D_item")
 
-[node name="Sprite2D" type="ColorRect" parent="Collectible2"]
-size = Vector2(16, 16)
-color = Color(1.0, 0.3, 0.3, 1.0)
+[node name="Ruby" type="Area2D" parent="."]
+position = Vector2(620, 460)
+collision_layer = 4
+script = ExtResource("3_collectible")
+item_name = "ruby"
+quantity = 2
 
-[node name="Label" type="Label" parent="Collectible2"]
-offset_left = -20.0
-offset_top = -40.0
-offset_right = 36.0
-offset_bottom = -20.0
-text = "2x ruby"
+[node name="Body" type="ColorRect" parent="Ruby"]
+offset_left = -8.0
+offset_top = -8.0
+offset_right = 8.0
+offset_bottom = 8.0
+mouse_filter = 2
+color = Color(1, 0.3, 0.3, 1)
+
+[node name="Label" type="Label" parent="Ruby"]
+offset_left = -30.0
+offset_top = -36.0
+offset_right = 30.0
+offset_bottom = -13.0
+horizontal_alignment = 1
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Ruby"]
+shape = SubResource("RectangleShape2D_item")
+
+[node name="Merchant" type="CharacterBody2D" parent="." groups=["npc"]]
+position = Vector2(660, 180)
+collision_layer = 2
+collision_mask = 9
+motion_mode = 1
+script = ExtResource("4_npc")
+patrol_points = Array[Vector2]([Vector2(660, 180), Vector2(840, 180)])
+
+[node name="Body" type="ColorRect" parent="Merchant"]
+offset_left = -14.0
+offset_top = -14.0
+offset_right = 14.0
+offset_bottom = 14.0
+mouse_filter = 2
+color = Color(0.3, 0.8, 0.4, 1)
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Merchant"]
+shape = SubResource("RectangleShape2D_body")
+
+[node name="TalkZone" type="Area2D" parent="Merchant"]
+collision_layer = 0
+
+[node name="CollisionShape2D" type="CollisionShape2D" parent="Merchant/TalkZone"]
+shape = SubResource("CircleShape2D_talk")
 
 [node name="Walls" type="StaticBody2D" parent="."]
+collision_layer = 8
+collision_mask = 0
 
-[node name="TopWall" type="CollisionShape2D" parent="Walls"]
-position = Vector2(480, 0)
-shape = BoxShape2D(set={
-"size": Vector2(960, 10)
-})
+[node name="Top" type="CollisionShape2D" parent="Walls"]
+position = Vector2(480, -10)
+shape = SubResource("RectangleShape2D_wall_h")
 
-[node name="BottomWall" type="CollisionShape2D" parent="Walls"]
+[node name="Bottom" type="CollisionShape2D" parent="Walls"]
 position = Vector2(480, 650)
-shape = BoxShape2D(set={
-"size": Vector2(960, 10)
-})
+shape = SubResource("RectangleShape2D_wall_h")
 
-[node name="LeftWall" type="CollisionShape2D" parent="Walls"]
-position = Vector2(0, 325)
-shape = BoxShape2D(set={
-"size": Vector2(10, 650)
-})
+[node name="Left" type="CollisionShape2D" parent="Walls"]
+position = Vector2(-10, 320)
+shape = SubResource("RectangleShape2D_wall_v")
 
-[node name="RightWall" type="CollisionShape2D" parent="Walls"]
-position = Vector2(970, 325)
-shape = BoxShape2D(set={
-"size": Vector2(10, 650)
-})
+[node name="Right" type="CollisionShape2D" parent="Walls"]
+position = Vector2(970, 320)
+shape = SubResource("RectangleShape2D_wall_v")
 
 [node name="HUD" type="CanvasLayer" parent="."]
 
 [node name="InventoryUI" type="PanelContainer" parent="HUD"]
-anchors_preset = 2
-anchors_left = 0.0
-anchors_top = 0.0
-anchors_right = 1.0
-anchors_bottom = 0.0
-anchors_offset_left = 0.0
-anchors_offset_top = 0.0
-anchors_offset_right = -200.0
-anchors_offset_bottom = 80.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 320.0
+offset_bottom = 60.0
+script = ExtResource("5_inventory")
 
-[node name="VBoxContainer" type="VBoxContainer" parent="HUD/InventoryUI"]
+[node name="VBox" type="VBoxContainer" parent="HUD/InventoryUI"]
 layout_mode = 2
-theme_override_constants/separation = 5
+theme_override_constants/separation = 4
 
-[node name="TitleLabel" type="Label" parent="HUD/InventoryUI/VBoxContainer"]
+[node name="TitleLabel" type="Label" parent="HUD/InventoryUI/VBox"]
+layout_mode = 2
 text = "Minimal RPG Demo"
 
-[node name="ItemCountLabel" type="Label" parent="HUD/InventoryUI/VBoxContainer"]
+[node name="ItemCountLabel" type="Label" parent="HUD/InventoryUI/VBox"]
+layout_mode = 2
 text = "Items: 0"
 
-[node name="InstructionsLabel" type="Label" parent="HUD/InventoryUI/VBoxContainer"]
-text = "WASD to move | Walk into colored squares to collect"
+[node name="Items" type="VBoxContainer" parent="HUD/InventoryUI/VBox"]
+layout_mode = 2
+
+[node name="DialogueLabel" type="Label" parent="HUD/InventoryUI/VBox"]
+layout_mode = 2
+
+[node name="InstructionsLabel" type="Label" parent="HUD/InventoryUI/VBox"]
+layout_mode = 2
+text = "WASD/arrows to move | Esc to pause"
+
+[node name="PauseLabel" type="Label" parent="HUD"]
+visible = false
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -150.0
+offset_top = -12.0
+offset_right = 150.0
+offset_bottom = 12.0
+text = "Paused - press Esc to resume"
+horizontal_alignment = 1
+
+[node name="VirtualJoystick" type="VirtualJoystick" parent="HUD"]
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 24.0
+offset_top = -224.0
+offset_right = 224.0
+offset_bottom = -24.0
+action_left = &"move_left"
+action_right = &"move_right"
+action_up = &"move_up"
+action_down = &"move_down"
+visibility_mode = 1

@@ -80,21 +80,9 @@ for skill_dir in skills/*/; do
     fi
 done
 
-# Check package.json
-echo ""
-echo "[4] package.json validation"
-if node -e "const d=require('./package.json'); if(!d.pi?.skills) throw new Error('missing pi manifest');" 2>/dev/null; then
-    name=$(node -e "console.log(require('./package.json').name)")
-    echo "  ✓ Valid: name=$name, pi.skills configured"
-    passed=$((passed+1))
-else
-    echo "  ✗ package.json is invalid or missing pi manifest"
-    errors=$((errors+1))
-fi
-
 # Check LICENSE
 echo ""
-echo "[5] LICENSE"
+echo "[4] LICENSE"
 if [ -f "LICENSE" ] && grep -qi 'mit' LICENSE; then
     echo "  ✓ MIT License present"
     passed=$((passed+1))
@@ -105,7 +93,7 @@ fi
 
 # Check AGENTS.md
 echo ""
-echo "[6] Cross-agent documentation"
+echo "[5] Cross-agent documentation"
 if [ -f "AGENTS.md" ]; then
     agents=$(grep -c '###' AGENTS.md 2>/dev/null || echo 0)
     echo "  ✓ AGENTS.md present ($agents agent sections)"

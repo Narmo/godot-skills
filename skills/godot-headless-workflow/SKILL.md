@@ -37,7 +37,7 @@ the editor**. Every change must pass the headless gate before you claim it works
 3. **Scenes are text** (`.tscn`/`.tres`) — editable by hand *with care*, or better, generated
    by tool scripts. See §Text Asset Safety.
 4. **Never touch `.godot/`** — it's a regenerable cache.
-5. **The editor GUI is optional.** Use it (or the package's MCP bridge) only for visual
+5. **The editor GUI is optional.** Use it only for visual
    layout iteration; logic, tests, and builds are all CLI work.
 
 ## Prerequisites
@@ -69,7 +69,7 @@ export behavior are **identical across hosts** — projects stay fully portable.
    inside WSL while your emulator/adb runs on Windows causes device-detection pain.
    On Ubuntu, USB debugging needs udev rules for your phone vendor before `adb devices` lists it.
 4. **Signing env vars are the same** on both hosts — just use absolute paths appropriate
-   per filesystem in `GODOT_ANDROID_KEYSTORE_PATH`.
+   per filesystem in `GODOT_ANDROID_KEYSTORE_RELEASE_PATH`.
 
 ## The Core Loop
 
@@ -104,10 +104,12 @@ NOT catch broken node paths, missing autoloads, or runtime type errors — those
 
 ### Step 3 — Unit tests (gdUnit4)
 
-Standardize every project on [gdUnit4](https://github.com/MikeSchulze/gdUnit4). Tests live in
-`res://tests/`; suites extend `GdUnitTestSuite`. Run from the project root:
+Standardize every project on [gdUnit4](https://github.com/godot-gdunit-labs/gdUnit4). Tests live in
+`res://tests/`; suites extend `GdUnitTestSuite`. The runner needs `GODOT_BIN` pointing at the
+Godot executable. Run from the project root:
 
 ```bash
+export GODOT_BIN=$(command -v godot)
 # Windows
 addons/gdUnit4/runtest.cmd -a res://tests --continue
 # Linux/macOS
@@ -163,12 +165,19 @@ godot --headless --path . -s res://tools/smoke_test.gd
 ```bash
 #!/usr/bin/env bash
 # verify.sh — the agent gate. Run after EVERY batch of edits. All steps must exit 0.
+# Assumes the git root is the Godot project root.
 set -e
 godot --headless --path . --import
-for f in $(git diff --name-only HEAD | grep '\.gd$'); do
-  godot --headless --check-only --script "res://${f#*/}" || exit 1
+# Changed and new (untracked) scripts
+for f in $( (git diff --name-only HEAD; git ls-files --others --exclude-standard) | grep '\.gd$' | sort -u); do
+  godot --headless --path . --check-only --script "res://$f" || exit 1
 done
-addons/gdUnit4/runtest.cmd -a res://tests --continue      # Linux/macOS: runtest.sh
+export GODOT_BIN=${GODOT_BIN:-$(command -v godot)}
+if [ -x addons/gdUnit4/runtest.sh ]; then
+  ./addons/gdUnit4/runtest.sh -a res://tests --continue
+else
+  addons/gdUnit4/runtest.cmd -a res://tests --continue   # Git Bash on Windows
+fi
 godot --headless --path . --quit-after 300
 echo "ALL CHECKS PASSED"
 ```
@@ -206,6 +215,7 @@ func _build() -> void:
 	sprite.name = "Player"
 	sprite.position = Vector2(640, 360)
 	root_node.add_child(sprite)
+	sprite.owner = root_node  # pack() only saves nodes owned by the root
 
 	var packed := PackedScene.new()
 	packed.pack(root_node)
@@ -225,19 +235,19 @@ One-time setup: create presets (editor UI or by writing `export_presets.cfg` —
 # Windows/Linux desktop
 godot --headless --path . --export-release "Windows Desktop" builds/win/game.exe
 
-# Android (AAB for Play Store; APK for sideload/Galaxy Store)
+# Android (AAB needs gradle_build/export_format = AAB in the preset; APK for sideload)
 godot --headless --path . --export-release "Android" builds/android/game.aab
 
-# iOS — produces an Xcode project FOLDER, archived later on macOS
-godot --headless --path . --export-release "iOS" builds/ios/
+# iOS — writes builds/ios/game.xcodeproj (plus game.ipa when exporting on macOS)
+godot --headless --path . --export-release "iOS" builds/ios/game.ipa
 ```
 
 Release Android exports read signing config from env vars:
 
 ```bash
-export GODOT_ANDROID_KEYSTORE_PATH=/path/to/release.keystore
-export GODOT_ANDROID_KEYSTORE_USER=alias
-export GODOT_ANDROID_KEYSTORE_PASSWORD=secret
+export GODOT_ANDROID_KEYSTORE_RELEASE_PATH=/path/to/release.keystore
+export GODOT_ANDROID_KEYSTORE_RELEASE_USER=alias
+export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=secret
 ```
 
 Details, debugging exports (`--export-debug`), and the store-submission checklist live in
@@ -284,7 +294,7 @@ time — don't guess API surface (see failure modes below).
 | Task | Tool |
 |---|---|
 | Script edits, tests, exports, CI, refactors | **Headless CLI (this skill)** |
-| Visual layout polish, animation curves, theme tweaking | Editor GUI (human) or the package's `mcp-bridge/` MCP server for agent-driven editor control |
+| Visual layout polish, animation curves, theme tweaking | Editor GUI (human) |
 | Import cache issues | Always `--import` headless, never hand-fix `.godot/` |
 
 ## Related Skills

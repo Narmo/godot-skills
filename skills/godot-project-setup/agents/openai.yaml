@@ -1,12 +1,10 @@
 # OpenAI / Codex CLI extension for godot-project-setup
 # Safely ignored by other agents per Agent Skills Open Standard
+# Codex reads interface (UI metadata), policy and dependencies from this file.
+
+interface:
+  display_name: "Godot Project Setup"
+  short_description: "Scaffold a new Godot 4.x project"
 
 policy:
-  safe: true
-  no_network: true
-
-when_to_use:
-  - "creating a new Godot project"
-  - "setting up Godot project structure"
-  - "Godot export presets"
-  - "scaffolding a Godot game"
+  allow_implicit_invocation: true

@@ -1,16 +1,19 @@
 ## Smooth follow camera.
-## Demonstrates: Tween animations and smooth tracking.
-
+## Demonstrates: frame-rate independent smoothing with lerp() and Camera2D limits.
 extends Camera2D
 
 @export var target: Node2D
-@export var smoothing: float = 0.08
+@export var smoothing_speed: float = 6.0
+@export var vertical_offset: float = -60.0
+
+
+func _ready() -> void:
+	if target:
+		global_position = target.global_position + Vector2(0.0, vertical_offset)
 
 
 func _process(delta: float) -> void:
 	if not target:
 		return
-
-	# Smooth interpolation toward target
-	position.x = lerpf(position.x, target.position.x, smoothing)
-	position.y = lerpf(position.y, target.position.y - 100.0, smoothing)
+	var goal := target.global_position + Vector2(0.0, vertical_offset)
+	global_position = global_position.lerp(goal, 1.0 - exp(-smoothing_speed * delta))

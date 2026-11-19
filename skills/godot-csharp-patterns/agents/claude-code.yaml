@@ -5,7 +5,7 @@ when_to_use:
   - "writing C# code in Godot"
   - "Godot Mono / C# patterns"
   - "Export attributes in Godot"
-  - "Godot GDExtension interop"
+  - "calling GDScript from C# in Godot"
   - "Godot C# performance optimization"
 
 tool_permissions:

@@ -1,48 +1,49 @@
-## Inventory UI panel for displaying collected items.
-## Demonstrates: Container layout, Resource-based inventory management,
-## and signal-driven UI updates.
-
+## Inventory panel that lists collected items and shows NPC dialogue.
+## Demonstrates: container layout and signal-driven UI updates, with the
+## player and NPCs found through groups instead of hard-coded paths.
 class_name InventoryUI
 extends PanelContainer
 
-@export var slot_container: VBoxContainer
-@onready var count_label := $VBoxContainer/ItemCountLabel
+var _inventory: Dictionary[String, int] = {}
 
-var _inventory: Dictionary = {}
+@onready var _count_label: Label = $VBox/ItemCountLabel
+@onready var _items: VBoxContainer = $VBox/Items
+@onready var _dialogue_label: Label = $VBox/DialogueLabel
 
 
 func _ready() -> void:
-	# Find player and connect signals
 	var player := get_tree().get_first_node_in_group("player") as Player
 	if player:
 		player.item_collected.connect(_on_item_collected)
-
-	visibility_changed.connect(_on_visibility_changed)
+	for node in get_tree().get_nodes_in_group("npc"):
+		var npc := node as NPC
+		if npc:
+			npc.dialogue_started.connect(_on_dialogue_started)
+			npc.dialogue_ended.connect(_on_dialogue_ended)
 
 
 func _on_item_collected(item_name: String, quantity: int) -> void:
 	_inventory[item_name] = _inventory.get(item_name, 0) + quantity
-	_update_display()
+	_refresh()
 
 
-func _update_display() -> void:
-	if count_label:
-		var total := 0
-		for item in _inventory.values():
-			total += item
-		count_label.text = "Items: " + str(total)
+func _refresh() -> void:
+	var total := 0
+	for amount: int in _inventory.values():
+		total += amount
+	_count_label.text = "Items: %d" % total
 
-	# Update individual slots
-	for child in slot_container.get_children():
-		if child is Label:
-			child.queue_free()
-
-	for item_name in _inventory:
+	for child in _items.get_children():
+		child.queue_free()
+	for item_name: String in _inventory:
 		var label := Label.new()
-		label.text = item_name.capitalize() + ": " + str(_inventory[item_name])
-		slot_container.add_child(label)
+		label.text = "%s: %d" % [item_name.capitalize(), _inventory[item_name]]
+		_items.add_child(label)
 
 
-func _on_visibility_changed() -> void:
-	if not visible:
-		return  # Only update when visible
+func _on_dialogue_started(npc_name: String, text: String) -> void:
+	_dialogue_label.text = "%s: %s" % [npc_name, text]
+
+
+func _on_dialogue_ended() -> void:
+	_dialogue_label.text = ""

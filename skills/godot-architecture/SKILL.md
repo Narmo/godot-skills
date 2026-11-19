@@ -151,7 +151,7 @@ class_name EntityData extends Resource
 @export var entity_name: String = ""
 @export var health: int = 100
 @export var speed: float = 100.0
-@export var components: Array[String] = []  # Component scene paths
+@export var components: Array[PackedScene] = []  # Component scenes to instance
 ```
 
 ## Project Structure Patterns
@@ -198,16 +198,5 @@ func cleanup() -> void:
 
 ## Godot 4.7 Architecture Notes
 
-- **tween_await()** — Use for sequential animations without callback chains in component scripts
-- **DrawableTexture2D** — Procedural rendering for debug visualization of entity bounds
-- **Perfetto tracing** — Profile architecture decisions with CPU/GPU trace markers
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools can inspect and modify your project live:
-
-- **`scene_tree`** — Inspect scene hierarchy to audit composition patterns
-- **`script_read`** / **`script_edit`** — Read and modify architecture scripts
-- **`class_db_info`** — Query available methods on Godot classes for integration points
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.
+- **`Tween.tween_await(signal)`** — components can sequence animations that wait on other components' signals inside one tween
+- **Perfetto tracing** — on Android, engine work appears in system traces; check how architecture choices (autoload chatter, per-frame signals) cost on device

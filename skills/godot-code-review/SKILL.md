@@ -61,22 +61,22 @@ var sprite = get_node("Character/Sprite2D")
 ### Signal Leaks
 
 ```gdscript
-# BAD: Forgetting to disconnect signals
+# Connections to a node's own methods are removed automatically when the node is freed:
 func _ready():
     EventBus.some_signal.connect(on_some_signal)
-    # If this node is freed, the callback still holds a reference
 
-# GOOD: Auto-disconnect when using method references
-func _ready():
-    EventBus.some_signal.connect(on_some_signal)  # Godot auto-handles method refs
+# Lambdas are not tied to the node the same way — keep a reference and disconnect them:
+var _callback := func(): handle_event()
 
-# GOOD: Manual disconnect for lambdas
-func _ready():
-    var callback = func(): handle_event()
-    EventBus.some_signal.connect(callback)
+func _enter_tree():
+    EventBus.some_signal.connect(_callback)
 
 func _exit_tree():
-    EventBus.some_signal.disconnect(callback)
+    EventBus.some_signal.disconnect(_callback)
+
+# One-off reactions don't need cleanup at all:
+func wait_for_start():
+    EventBus.game_started.connect(on_game_started, CONNECT_ONE_SHOT)
 ```
 
 ## Performance Review Checklist
@@ -88,13 +88,13 @@ func _exit_tree():
 | Physics movement | `_physics_process` | Fixed timestep, syncs with physics server |
 | Non-physics updates | `_process` | Frame-rate dependent, for UI/rendering |
 | One-time setup | `_ready` | Called once when node enters tree |
-| Frame before ready | `_enter_tree` | Called before `_ready`, even if tree paused |
+| Every time it enters the tree | `_enter_tree` | Before `_ready`, and again after each re-add |
 | Cleanup | `_exit_tree` | Called when node is removed from tree |
-| Physics tick (input) | `_physics_input_event` | For character body input handling |
+| Gameplay input | `_unhandled_input` | Runs after the UI had a chance to consume the event |
 
 ### Memory Management
 
-- [ ] All `queue_free()` calls have corresponding signal disconnections
+- [ ] Lambda connections to long-lived emitters (autoloads) are disconnected in `_exit_tree()`
 - [ ] No circular references between nodes
 - [ ] Large resources (textures, audio) unloaded when no longer needed
 - [ ] Scene instances properly freed after use
@@ -104,8 +104,8 @@ func _exit_tree():
 
 #### GDScript Style
 
-- Use 4-space indentation (not tabs)
-- Follow [GDScript Style Guide](https://godotengine.org/doc/en/latest/tutorials/scripting/gdscript/gdscript_styleguide.html)
+- Indent with tabs (the style guide default) and never mix tabs and spaces in one file
+- Follow [GDScript Style Guide](https://docs.godotengine.org/en/stable/tutorials/scripting/gdscript/gdscript_styleguide.html)
 - Use `@export` for inspector-exposed variables
 - Use `@onready` for node paths
 - Type annotations on function parameters and return values
@@ -113,7 +113,7 @@ func _exit_tree():
 
 #### C# Style
 
-- Use PascalCase for class names, camelCase for members
+- Use PascalCase for classes, methods and public members, `_camelCase` for private fields
 - Use Godot's `[Export]` attributes for inspector properties
 - Implement `_ExitTree()` for cleanup of event subscriptions
 - Prefer structs for small value types to avoid GC pressure
@@ -141,10 +141,10 @@ func load_level(level_path: String):
 
 ## Godot 4.7 Code Review Notes
 
-- Check for **HDR rendering** configuration in project settings
-- Review **AreaLight3D** usage for new 4.7 features (modes, intensity profiles)
+- HDR output is opt-in (`display/window/hdr/request_hdr_output`) — check it is on only when you target HDR displays
+- Emissive meshes faking light panels can become `AreaLight3D` nodes
 - Verify **VirtualJoystick** is used instead of custom implementations on mobile
-- Check that **tween_await()** replaces nested callback patterns where applicable
+- Tween chains that wait on signals between steps can use `Tween.tween_await()`
 
 ## Quick Review Commands
 
@@ -161,15 +161,3 @@ grep -rn "\.connect(" --include="*.gd" scripts/
 # Find queue_free usage to verify cleanup
 grep -rn "queue_free" --include="*.gd" scripts/
 ```
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools enhance code review:
-
-- **`script_read`** — Read any script file for review without opening the editor
-- **`script_validate`** — Run syntax validation with `checkDeprecated: true` and `suggestTweenAwait: true`
-- **`file_search`** — Search across all project files for patterns (e.g., `queue_free`, signal leaks)
-- **`file_browse`** — List project directories to verify structure
-- **`class_db_info`** — Verify methods/properties exist before flagging issues
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.

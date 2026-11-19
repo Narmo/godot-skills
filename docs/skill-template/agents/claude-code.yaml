@@ -1,15 +1,12 @@
-# Claude Code agent extension for {{SKILL_NAME}}
-# Place this file at skills/{{SKILL_NAME}}/agents/claude-code.yaml
-
-name: {{SKILL_NAME}}
-description: "{{SKILL_DESCRIPTION}}"
+# Claude Code extension for {{SKILL_NAME}}
+# Safely ignored by other agents per Agent Skills Open Standard
 
 when_to_use:
-  - "User asks about {{TOPIC_KEYWORDS}}"
-  - "User mentions Godot {{RELEVANT_CONTEXT}}"
-  - "User needs help with {{SPECIFIC_TASK}}"
+  - "{{TRIGGER_PHRASE_1}}"
+  - "{{TRIGGER_PHRASE_2}}"
 
 tool_permissions:
-  read: true
-  write: true
-  bash: true
+  - read
+  - bash
+  - edit
+  - write

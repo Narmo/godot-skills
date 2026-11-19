@@ -29,185 +29,179 @@ Patterns for building conversation and narrative systems.
 
 ## Resource-Based Dialogue Data
 
-Store dialogue as `Resource` files for easy editing and versioning:
+Store dialogue as `Resource` files for easy editing and versioning. One `class_name` per file:
 
 ```gdscript
-class_name DialogueLine extends Resource
-
-@export var speaker: String = ""
-@export var text: String = ""
-@export var voice_file: String = ""  # Optional audio cue
-@export var portrait_index: int = -1
-@export var next_line_id: String = ""  # Branch target
-@export var choices: Array[DialogueChoice] = []
-
-class_name DialogueChoice extends Resource
+# dialogue_choice.gd
+class_name DialogueChoice
+extends Resource
 
 @export var choice_text: String = ""
 @export var target_line_id: String = ""
 @export var requires_flag: String = ""  # Optional quest flag check
 ```
 
+```gdscript
+# dialogue_line.gd
+class_name DialogueLine
+extends Resource
+
+@export var speaker: String = ""
+@export_multiline var text: String = ""
+@export var voice: AudioStream = null  # Optional voice clip
+@export var portrait_index: int = -1
+@export var next_line_id: String = ""  # Where to go when there are no choices
+@export var choices: Array[DialogueChoice] = []
+```
+
 ### Dialogue Script Resource
 
 ```gdscript
-class_name DialogueScript extends Resource
+# dialogue_script.gd
+class_name DialogueScript
+extends Resource
 
 @export var script_name: String = ""
 @export var start_line_id: String = ""
-@export var lines: Dictionary = {}  # id -> DialogueLine
+@export var lines: Dictionary[String, DialogueLine] = {}
 ```
 
 ## Dialogue Manager
 
-Central system for playing dialogue sequences:
+Central system for playing dialogue sequences. The UI shows each line and calls `advance()`
+or `select_choice()` when the player continues:
 
 ```gdscript
-class_name DialogueManager extends Node
+class_name DialogueManager
+extends Node
 
-signal dialogue_started(speaker: String, text: String)
-signal dialogue_ended()
-signal choice_presented(choices: Array[DialogueChoice])
-signal typewriter_progress(chars_shown: int, total_chars: int)
+signal line_shown(line: DialogueLine)
+signal choices_presented(choices: Array[DialogueChoice])
+signal dialogue_ended
 
-var current_script: DialogueScript = null
+var current_dialogue: DialogueScript = null
 var current_line: DialogueLine = null
 var is_playing: bool = false
-var flags: Dictionary = {}  # Quest/state flags
+var flags: Dictionary[String, bool] = {}  # Quest/state flags
 
-func play(script: DialogueScript) -> void:
-    current_script = script
+
+func play(dialogue: DialogueScript) -> void:
+    current_dialogue = dialogue
     is_playing = true
-    _show_line(script.start_line_id)
+    _show_line(dialogue.start_line_id)
+
 
 func _show_line(line_id: String) -> void:
-    if not current_script.lines.has(line_id):
+    if not current_dialogue.lines.has(line_id):
         push_error("DialogueManager: Line '%s' not found" % line_id)
         end_dialogue()
         return
 
-    current_line = current_script.lines[line_id] as DialogueLine
-    dialogue_started.emit(current_line.speaker, current_line.text)
+    current_line = current_dialogue.lines[line_id]
+    line_shown.emit(current_line)
+    var available := available_choices(current_line)
+    if not available.is_empty():
+        choices_presented.emit(available)
 
-    if current_line.choices.size() > 0:
-        choice_presented.emit(current_line.choices)
-    else:
-        # Auto-advance after typewriter
-        _auto_advance()
 
 func advance() -> void:
-    if not current_line:
-        return
+    if current_line == null or not available_choices(current_line).is_empty():
+        return  # a choice is pending
     if current_line.next_line_id.is_empty():
         end_dialogue()
     else:
         _show_line(current_line.next_line_id)
 
-func select_choice(choice_index: int) -> void:
-    if not current_line or choice_index >= current_line.choices.size():
+
+func select_choice(choice: DialogueChoice) -> void:
+    if current_line == null or choice not in available_choices(current_line):
         return
-    var choice = current_line.choices[choice_index]
-
-    # Check flag requirement
-    if not choice.requires_flag.is_empty():
-        if not flags.get(choice.requires_flag, false):
-            return  # Player hasn't met requirement
-
     _show_line(choice.target_line_id)
+
+
+## Choices whose flag requirement is met.
+func available_choices(line: DialogueLine) -> Array[DialogueChoice]:
+    var result: Array[DialogueChoice] = []
+    for choice in line.choices:
+        if choice.requires_flag.is_empty() or flags.get(choice.requires_flag, false):
+            result.append(choice)
+    return result
+
 
 func end_dialogue() -> void:
     is_playing = false
-    current_script = null
+    current_dialogue = null
     current_line = null
     dialogue_ended.emit()
+
 
 func set_flag(flag: String, value: bool = true) -> void:
     flags[flag] = value
 ```
 
+A line whose choices are all locked behaves like a line without choices and follows
+`next_line_id`.
+
 ## Typewriter Text Effect
 
-Animate text appearing character-by-character:
+Reveal text character by character with `visible_characters`, which keeps BBCode formatting
+intact (unlike cutting the string):
 
 ```gdscript
-class_name DialogueText extends RichTextLabel
+class_name DialogueText
+extends RichTextLabel
 
-signal typing_complete()
+signal typing_progress(chars_shown: int, total_chars: int)
+signal typing_complete
 
-@export var type_speed: float = 0.03  # Seconds per character
-var _type_timer: float = 0.0
-var _full_text: String = ""
-var _char_index: int = 0
-var _is_typing: bool = false
-var _waiting_for_input: bool = false
+@export var chars_per_second: float = 30.0
 
-func start_typing(text: String) -> void:
-    _full_text = text
-    _char_index = 0
-    _is_typing = true
-    _waiting_for_input = false
-    text = ""
+var _visible := 0.0
+
+
+func start_typing(line_text: String) -> void:
+    bbcode_enabled = true
+    text = line_text
+    visible_characters = 0
+    _visible = 0.0
+
+
+func is_typing() -> bool:
+    return visible_characters != -1 and visible_characters < get_total_character_count()
+
 
 func _process(delta: float) -> void:
-    if not _is_typing:
+    if not is_typing():
         return
+    _visible += chars_per_second * delta
+    visible_characters = mini(int(_visible), get_total_character_count())
+    typing_progress.emit(visible_characters, get_total_character_count())
+    if not is_typing():
+        typing_complete.emit()
 
-    if _waiting_for_input:
-        return  # Wait for player to click to advance
 
-    _type_timer += delta
-    if _type_timer >= type_speed and _char_index < _full_text.length():
-        _type_timer = 0.0
-        _char_index += 1
-        text = _full_text.substr(0, _char_index)
-        DialogueManager.typewriter_progress.emit(_char_index, _full_text.length())
-
-        if _char_index >= _full_text.length():
-            _is_typing = false
-            typing_complete.emit()
-
-# Skip to end on input
+# Skip to the end on click
 func _gui_input(event: InputEvent) -> void:
-    if event is InputEventMouseButton and event.pressed:
-        if _is_typing:
-            # Show remaining text instantly
-            text = _full_text
-            _char_index = _full_text.length()
-            _is_typing = false
-            typing_complete.emit()
+    if event is InputEventMouseButton and event.pressed and is_typing():
+        visible_characters = -1  # show everything
+        typing_complete.emit()
 ```
 
 ## Branching Dialogue Pattern
 
-Handle conditional branches based on game state:
+Branches are just choices with targets and optional flag requirements:
 
 ```gdscript
-# In dialogue script editor or code:
 # Line "greeting":
-#   text: "Hello there, {0}!"
+#   text: "Hello there, {name}!"
 #   choices:
-#     - text: "Hi!" → target: "friendly_chat"
-#     - text: "Who are you?" → target: "hostile_chat"
-#     - text: "I need help." → target: "quest_offer" (requires: met_quest_giver)
+#     - "Hi!"           → "friendly_chat"
+#     - "Who are you?"  → "hostile_chat"
+#     - "I need help."  → "quest_offer"   (requires_flag: met_quest_giver)
 
-func _resolve_branch(line_id: String) -> String:
-    var line = current_script.lines[line_id] as DialogueLine
-    if line.choices.size() == 0:
-        return line.next_line_id
-
-    # Filter choices by flags
-    var valid_choices: Array[DialogueChoice] = []
-    for choice in line.choices:
-        if choice.requires_flag.is_empty():
-            valid_choices.append(choice)
-        elif flags.get(choice.requires_flag, false):
-            valid_choices.append(choice)
-
-    # If no valid choices, use default next_line_id
-    if valid_choices.size() == 0:
-        return line.next_line_id
-
-    return ""  # Wait for player choice
+func show_line(line: DialogueLine, player_name: String) -> void:
+    # Fill placeholders at display time, after translation
+    $DialogueText.start_typing(tr(line.text).format({"name": player_name}))
 ```
 
 ## Portrait Management
@@ -215,31 +209,34 @@ func _resolve_branch(line_id: String) -> String:
 Display character portraits during dialogue:
 
 ```gdscript
-class_name DialoguePortrait extends Container
+class_name DialoguePortrait
+extends TextureRect
+
+enum PortraitState { IDLE, TALKING, SURPRISED }
 
 @export var portrait_frames: Array[Texture2D] = []
 
+var current_state: PortraitState = PortraitState.IDLE
+
+
 func show_portrait(index: int) -> void:
     if index < 0 or index >= portrait_frames.size():
+        hide()
         return
-    # Update portrait sprite with frame[index]
-    pass
+    texture = portrait_frames[index]
+    show()
 
-# Animate portrait reactions (idle, talking, surprised)
-enum PortraitState { IDLE, TALKING, SURPRISED }
-var current_state: PortraitState = PortraitState.IDLE
+
+# Small "talking" bounce while text types
+func play_talking() -> void:
+    current_state = PortraitState.TALKING
+    pivot_offset = size / 2.0
+    var tween := create_tween().set_loops(3)
+    tween.tween_property(self, "scale", Vector2(1.03, 1.03), 0.08)
+    tween.tween_property(self, "scale", Vector2.ONE, 0.08)
 ```
 
 ## Godot 4.7 Dialogue Notes
 
-- **tween_await()** — Animate dialogue panel entrance/exit smoothly: `await get_tree().create_tween().tween_property(panel, "modulate:a", 1.0).finished`
-- **RichTextLabel** — Improved bbcode for dialogue formatting (`[wave]`, `[shake]`, `[carousel]`)
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools can inspect and modify your project live:
-
-- **`script_read`** / **`script_edit`** — Read and modify dialogue scripts
-- **`scene_tree`** — Inspect dialogue UI node hierarchy
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.
+- **`Tween.tween_await(signal)`** — one tween can open the panel, wait for `DialogueManager.dialogue_ended`, then close it
+- **RichTextLabel effects** — built-in `[wave]`, `[shake]`, `[tornado]`, `[fade]`, `[rainbow]` and `[pulse]` tags add emphasis to lines

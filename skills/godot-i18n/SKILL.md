@@ -1,6 +1,6 @@
 ---
 name: godot-i18n
-description: "Localization patterns for Godot 4.x: TranslationServer, CSV/PO/JSON translation formats, runtime language switching, RTL text support, font fallback chains, and pluralization. Use when implementing internationalization in Godot games."
+description: "Localization patterns for Godot 4.x: TranslationServer, CSV and PO translation files, runtime language switching, RTL text support, font fallback chains, and pluralization. Use when implementing internationalization in Godot games."
 license: MIT
 compatibility:
   - godot-4.0
@@ -29,133 +29,147 @@ Patterns for internationalizing Godot games.
 
 ## TranslationServer Basics
 
-Godot's built-in translation system uses `.translation` files (CSV-based):
+Godot translates through `TranslationServer`. Controls translate their `text` automatically
+(`auto_translate_mode`); in code, wrap strings in `tr()`:
 
 ```gdscript
-# Mark strings for translation with _() shorthand
-func _ready():
-    $Label.text = tr("Hello, Player!")
-    $Button.text = tr("Start Game")
-
-# tr() calls TranslationServer.translate() internally
-# Strings are looked up in loaded .translation resources
+func _ready() -> void:
+    $Label.text = tr("GREET")          # key-based (CSV)
+    $Button.text = tr("Start Game")    # source-text based (PO)
 ```
 
 ### Creating Translation Files
 
-Use the editor: **Project → Tools → Translation** to create `.csv` files, then export as `.translation`.
+Godot imports two formats:
 
-Or create CSV manually:
+**CSV** — one row per key, one column per locale. Godot generates `.translation` resources on
+import:
 
 ```csv
-msgid "Hello, Player!"
-msgstr "¡Hola, Jugador!"
+keys,en,es,ja
+GREET,"Hello, friend!","¡Hola, amigo!",こんにちは
+START,Start Game,Comenzar juego,ゲームスタート
+SCORE,Score: %d,Puntuación: %d,スコア: %d
+```
 
+**PO (gettext)** — one file per locale, used directly. Generate the template from your scenes
+and scripts with **Project Settings > Localization > POT Generation**:
+
+```po
 msgid "Start Game"
-msgstr "Comenzar Juego"
-
-msgid "Score: {0}"
-msgstr "Puntuación: {0}"
+msgstr "Comenzar juego"
 ```
 
 ### Registering Translations
 
-In **Project Settings → Locale → Configured Locales**, add supported languages (e.g., `es`, `fr`, `ja`).
+Add the imported `.translation` or `.po` files in **Project Settings > Localization >
+Translations** (`internationalization/locale/translations`).
 
 ## Runtime Language Switching
 
 ```gdscript
-class_name LanguageManager extends Node
+# language_manager.gd — autoload "LanguageManager"
+extends Node
 
 signal language_changed(locale: String)
 
+const SETTINGS_PATH := "user://settings.cfg"
+
 var available_locales: Array[String] = ["en", "es", "fr", "ja"]
 var current_locale: String = "en"
+
+
+func _ready() -> void:
+    var config := ConfigFile.new()
+    if config.load(SETTINGS_PATH) == OK:
+        set_language(config.get_value("general", "language", "en"))
+
 
 func set_language(locale: String) -> void:
     if not available_locales.has(locale):
         push_error("LanguageManager: Unsupported locale '%s'" % locale)
         return
-    TranslationServer.set_locale(locale)
+    TranslationServer.set_locale(locale)  # auto-translated Controls update by themselves
     current_locale = locale
     language_changed.emit(locale)
-    _notify_ui_update()
+    _save_preference()
 
-func _notify_ui_update() -> void:
-    # Re-tr() all UI labels that need updating
-    # Connect to language_changed signal in UI nodes
-    pass
-
-# Save/restore preference
-func _ready() -> void:
-    var saved = ConfigFile.new()
-    if saved.load("user://settings.cfg") == OK:
-        var locale = saved.get_value("general", "language", "en")
-        set_language(locale)
 
 func _save_preference() -> void:
-    var config = ConfigFile.new()
-    config.load("user://settings.cfg")
+    var config := ConfigFile.new()
+    config.load(SETTINGS_PATH)  # keep other settings; a missing file is fine
     config.set_value("general", "language", current_locale)
-    config.save("user://settings.cfg")
+    config.save(SETTINGS_PATH)
+```
+
+Text you set from code with `tr()` does not update by itself. Refresh it when the locale
+changes:
+
+```gdscript
+func _notification(what: int) -> void:
+    if what == NOTIFICATION_TRANSLATION_CHANGED and is_node_ready():
+        $Label.text = tr("SCORE") % score
 ```
 
 ### Language Selector UI
 
 ```gdscript
-# LanguageSelector.gd — attached to OptionButton
+# language_selector.gd — attached to an OptionButton
 extends OptionButton
 
-func _ready():
+
+func _ready() -> void:
     for locale in LanguageManager.available_locales:
-        var display_name = TranslationServer.get_locale_name(locale)
-        add_item(display_name, locale)
+        add_item(TranslationServer.get_locale_name(locale))
+        set_item_metadata(item_count - 1, locale)
     selected = LanguageManager.available_locales.find(LanguageManager.current_locale)
-    item_selected.connect(LanguageManager.set_language)
+    item_selected.connect(_on_item_selected)
+
+
+func _on_item_selected(index: int) -> void:
+    LanguageManager.set_language(get_item_metadata(index))
 ```
 
 ## Pluralization
 
-Godot supports plural forms via `trn()`:
+`tr_n(message, plural_message, n, context)` picks the right plural form for the current locale.
+PO files carry plural rules; CSV files support plurals since Godot 4.6 through a `?plural`
+column.
 
 ```gdscript
-# trn(singular, plural, count)
-func show_item_count(count: int):
-    $Label.text = trn("You have {0} item.", "You have {0} items.", count) % count
-
-# For complex plurals (Slavic languages with 3+ forms), use custom logic
-func get_plural_string(msgid_singular: String, msgid_plural: String, n: int) -> String:
-    # Godot handles plural forms via .po format plural rules
-    return trn(msgid_singular, msgid_plural, n)
+func show_item_count(count: int) -> void:
+    $Label.text = tr_n("You have %d item.", "You have %d items.", count) % count
 ```
+
+Languages with three or more plural forms (Slavic languages, Arabic) get them from the PO
+file's `Plural-Forms` header — no custom logic needed.
 
 ## RTL Text Support
 
 For Arabic, Hebrew, and other right-to-left languages:
 
 ```gdscript
-# In Label or RichTextLabel:
+# Labels pick the direction from their text by default (TEXT_DIRECTION_AUTO).
+# Force it when needed:
+$Label.text_direction = Control.TEXT_DIRECTION_RTL
+$Label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 $Label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-$Label.text_direction = TextServer.DIRECTION_RTL
-$Label.alignment = HORIZONTAL_ALIGNMENT_RIGHT
 
-# For mixed LTR/RTL content, use RichTextLabel with bbcode
-$RichTextLabel.text = "[rtl]مرحبا[/rtl] [ltr]Hello[/ltr]"
+# Mixed LTR/RTL text inside one string is reordered by the BiDi algorithm automatically.
 ```
 
 ### RTL-Aware UI Layout
 
-```gdscript
-# Container layouts flip automatically with RTL
-# Use Control.layout_mode for proper RTL support:
-$PanelContainer.set_anchors_preset(Control.PRESET_FULL_RECT)
+Containers mirror their children when the layout direction is right-to-left:
 
-# For manual positioning, mirror anchors:
-func mirror_for_rtl(control: Control) -> void:
-    if TranslationServer.get_locale() in ["ar", "he", "fa"]:
-        var left = control.anchor_left
-        control.anchor_left = control.anchor_right
-        control.anchor_right = left
+```gdscript
+# Follow the current locale (set this on the root Control of your UI)
+$UI.layout_direction = Control.LAYOUT_DIRECTION_APPLICATION_LOCALE
+
+
+func is_rtl_locale() -> bool:
+    var text_server := TextServerManager.get_primary_interface()
+    return text_server.is_locale_right_to_left(TranslationServer.get_locale())
 ```
 
 ## Font Fallback Chains
@@ -163,33 +177,31 @@ func mirror_for_rtl(control: Control) -> void:
 Handle characters not available in the primary font:
 
 ```gdscript
-# Theme approach (recommended):
-# 1. Create Theme resource
-# 2. Set "FontFile" for Label/LineEdit
-# 3. Add fallback fonts via DynamicFont
+# Theme approach (recommended): open the primary font resource and add
+# fallback fonts in its Fallbacks list, then set it as the theme's default font.
 
 # Code approach:
-var dynamic_font = DynamicFont.new()
-dynamic_font.font_path = "res://fonts/primary.ttf"
-dynamic_font.fallback_fonts.append(DynamicFontLoading.new())
-$Label.add_theme_font_override("font", dynamic_font)
+var primary: FontFile = load("res://fonts/NotoSans-Regular.ttf")
+primary.fallbacks = [load("res://fonts/NotoSansCJK-Regular.otf")]
+$Label.add_theme_font_override("font", primary)
 
-# For CJK + Latin support, chain fonts:
-# Primary: Noto Sans (Latin) → Fallback: Noto Sans CJK
+# Or use the operating system's fonts, which fall back automatically:
+var system_font := SystemFont.new()
+system_font.font_names = PackedStringArray(["Noto Sans", "Arial"])
 ```
 
 ## Translation Best Practices
 
-### Use Context Keys
+### Use Context
 
 ```gdscript
-# When the same word has different meanings:
-tr("Attack [weapon]")   # As a verb
-tr("Attack [noun]")     # As a noun/stat name
+# The same word with different meanings gets a context:
+tr("Attack", "verb")
+tr("Attack", "stat")
 
-# In .po files, msgctxt provides context
-# msgctxt "weapon" / msgid "Attack" / msgstr "Atacar"
-# msgctxt "noun" / msgid "Attack" / msgstr "Ataque"
+# In .po files the context is msgctxt:
+# msgctxt "verb" / msgid "Attack" / msgstr "Atacar"
+# msgctxt "stat" / msgid "Attack" / msgstr "Ataque"
 ```
 
 ### Avoid String Concatenation for Translatable Text
@@ -199,10 +211,10 @@ tr("Attack [noun]")     # As a noun/stat name
 tr("You found ") + item_name + tr(" in the cave!")
 
 # Good — translators control word order
-tr("You found {0} in the cave!") % item_name
+tr("You found %s in the cave!") % item_name
 
 # Better — named placeholders for clarity
-tr("You found {item} in {location}!") % {"item": item_name, "location": location_name}
+tr("You found {item} in {location}!").format({"item": item_name, "location": location_name})
 ```
 
 ### Externalize All UI Strings
@@ -212,20 +224,5 @@ tr("You found {item} in {location}!") % {"item": item_name, "location": location
 $Label.text = "Score: 100"  # BAD
 
 # Use tr() for everything visible to players
-$Label.text = tr("Score: {0}") % score  # GOOD
+$Label.text = tr("Score: %d") % score  # GOOD
 ```
-
-## Godot 4.7 i18n Notes
-
-- **TextServer** API improved for complex script handling
-- **RichTextLabel** supports better RTL paragraph alignment
-- Translation import pipeline handles `.po` files natively (no conversion needed)
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools can inspect and modify your project live:
-
-- **`project_info`** — Check configured locales and translation file paths
-- **`script_read`** / **`script_edit`** — Read and modify localization scripts
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.

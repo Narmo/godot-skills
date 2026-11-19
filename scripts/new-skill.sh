@@ -54,7 +54,8 @@ if [ -d "$TARGET_DIR" ]; then
 fi
 
 # --- Generate title from name (capitalize words) ---
-SKILL_TITLE=$(echo "$SKILL_NAME" | sed 's/-/ /g; s/\b\(.\)/\u\1/g')
+# awk instead of GNU sed's \u, which BSD/macOS sed doesn't support
+SKILL_TITLE=$(echo "$SKILL_NAME" | awk -F- '{for (i = 1; i <= NF; i++) $i = toupper(substr($i, 1, 1)) substr($i, 2)} 1' OFS=' ')
 
 # Escape the description for use as a sed replacement: a bare / & or \ in the
 # text would otherwise be read as sed syntax and corrupt the generated files.

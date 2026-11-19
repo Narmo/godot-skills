@@ -1,6 +1,6 @@
 ---
 name: godot-csharp-patterns
-description: "C# Mono patterns for Godot 4.x: Export attributes, signal handling, performance optimization, GDExtension interop, and best practices for first-class C# support. Use when writing C# code in Godot."
+description: "C# Mono patterns for Godot 4.x: Export attributes, signal handling, performance optimization, cross-language interop with GDScript, and best practices for first-class C# support. Use when writing C# code in Godot."
 license: MIT
 compatibility:
   - godot-4.0
@@ -43,7 +43,7 @@ public partial class Player : CharacterBody2D
     public float JumpForce { get; set; } = 400f;
 
     // File path
-    [Export(FileFilter = "*.png,*.svg")]
+    [Export(PropertyHint.File, "*.png,*.svg")]
     public string IconPath { get; set; } = "";
 
     // Resource export
@@ -75,27 +75,35 @@ public partial class Player : CharacterBody2D
 
 ## Signal Handling
 
-### C# Event Syntax vs Godot Signals
+### Subscribing to C# Signals
+
+Signals declared in C# with `[Signal]` become C# events:
 
 ```csharp
-// Godot signal declaration in GDScript (autoload)
-// class_name EventBus extends Node
-// signal player_died(Vector2 position)
+// EventBus.cs — autoload "EventBus"
+public partial class EventBus : Node
+{
+    [Signal] public delegate void PlayerDiedEventHandler(Vector2 position);
+}
+```
 
-// C# subscriber
+```csharp
+// Subscriber
+private EventBus _eventBus;
+
 public override void _Ready()
 {
-    // Method reference (recommended — auto-disconnect on free)
-    EventBus.PlayerDied += OnPlayerDied;
+    _eventBus = GetNode<EventBus>("/root/EventBus");
 
-    // Lambda (requires manual disconnect)
-    EventBus.PlayerDied += (pos) => GD.Print($"Died at {pos}");
+    // Method on this node: disconnected automatically when this node is freed
+    _eventBus.PlayerDied += OnPlayerDied;
 }
 
 public override void _ExitTree()
 {
-    // Clean up lambda subscriptions
-    EventBus.PlayerDied -= OnPlayerDied;
+    // Lambdas and handlers on non-Godot objects must be removed by hand;
+    // removing method handlers here is harmless and keeps intent explicit
+    _eventBus.PlayerDied -= OnPlayerDied;
 }
 
 private void OnPlayerDied(Vector2 position)
@@ -104,7 +112,16 @@ private void OnPlayerDied(Vector2 position)
 }
 ```
 
-### Using Godot.Signal for C#-Side Signals
+### Connecting to GDScript Signals
+
+Signals declared in GDScript have no C# event; connect by name:
+
+```csharp
+var gdNode = GetNode("/root/GameState");  // a GDScript autoload
+gdNode.Connect("level_completed", Callable.From<int>(OnLevelCompleted));
+```
+
+### Declaring and Emitting C# Signals
 
 ```csharp
 public partial class Enemy : CharacterBody2D
@@ -112,14 +129,14 @@ public partial class Enemy : CharacterBody2D
     [Signal] public delegate void HealthChangedEventHandler(int newHealth);
     [Signal] public delegate void DefeatedEventHandler();
 
-    private int health = 100;
+    private int _health = 100;
 
     public void TakeDamage(int amount)
     {
-        health -= amount;
-        EmitSignal(SignalName.HealthChanged, health);
+        _health -= amount;
+        EmitSignal(SignalName.HealthChanged, _health);
 
-        if (health <= 0)
+        if (_health <= 0)
         {
             EmitSignal(SignalName.Defeated);
             QueueFree();
@@ -133,41 +150,44 @@ public partial class Enemy : CharacterBody2D
 ### Avoiding GC Pressure
 
 ```csharp
-// Bad: Creates garbage every frame
+// Bad: builds a new string every frame, even when nothing changed
 public override void _Process(double delta)
 {
-    var text = $"Score: {score}";  // String allocation
-    label.Text = text;
+    label.Text = $"Score: {_score}";
 }
 
-// Good: Reuse objects, avoid allocations
-private readonly StringBuilder _sb = new();
+// Good: update only when the value changes
+private int _score;
 
-public override void _Process(double delta)
+public int Score
 {
-    _sb.Clear();
-    _sb.Append("Score: ");
-    _sb.Append(score);
-    label.Text = _sb.ToString();
+    get => _score;
+    set
+    {
+        if (_score == value) return;
+        _score = value;
+        label.Text = $"Score: {_score}";
+    }
 }
 ```
 
 ### Structs vs Classes
 
 ```csharp
-// Use structs for small, short-lived data
-public struct Vector2Int
+// Use structs for small, short-lived data (Godot's own Vector2/Vector2I are structs too)
+public readonly struct HitInfo
 {
-    public int X { get; }
-    public int Y { get; }
-    public Vector2Int(int x, int y) => (X, Y) = (x, y);
+    public readonly int Damage;
+    public readonly Vector2 Direction;
+    public HitInfo(int damage, Vector2 direction) => (Damage, Direction) = (damage, direction);
 }
 
-// Use classes for objects with identity/lifetime
-public class PlayerData : Resource
+// Godot objects are classes; Resources need partial, [GlobalClass] and [Export] to be saved
+[GlobalClass]
+public partial class PlayerData : Resource
 {
-    public string Name { get; set; }
-    public int Level { get; set; }
+    [Export] public string Name { get; set; } = "";
+    [Export] public int Level { get; set; } = 1;
 }
 ```
 
@@ -176,62 +196,51 @@ public class PlayerData : Resource
 ```csharp
 public partial class BulletPool : Node
 {
-    private readonly Queue<Bullet> _pool = new();
-    private readonly PackedScene _bulletScene;
+    [Export] public PackedScene BulletScene { get; set; }
 
-    public BulletPool(PackedScene bulletScene) => _bulletScene = bulletScene;
+    private readonly Queue<Bullet> _pool = new();
 
     public Bullet Get()
     {
-        if (_pool.TryDequeue(out var bullet))
+        if (!_pool.TryDequeue(out var bullet))
         {
-            bullet.Visible = true;
-            return bullet;
+            bullet = BulletScene.Instantiate<Bullet>();
+            AddChild(bullet);
         }
-        return _bulletScene.Instantiate<Bullet>();
+        bullet.Visible = true;
+        bullet.ProcessMode = ProcessModeEnum.Inherit;
+        return bullet;
     }
 
     public void Return(Bullet bullet)
     {
+        // Deactivate instead of freeing — a freed node can't be reused
         bullet.Visible = false;
-        bullet.QueueFree();
+        bullet.ProcessMode = ProcessModeEnum.Disabled;
         _pool.Enqueue(bullet);
     }
 }
 ```
 
-## GDExtension Interop
+## Cross-Language Interop
 
 ### Calling GDScript from C#
 
 ```csharp
-// GDScript (autoload "GameData")
-// class_name GameData extends Node
-// var high_score: int = 0
-
-// C# access
-var gameData = Engine.GetSingleton("GameData") as GodotObject;
-var highScore = gameData.Get("high_score");
+// GDScript autoload "GameData" with: var high_score: int = 0
+var gameData = GetNode("/root/GameData");
+int highScore = gameData.Get("high_score").AsInt32();
+gameData.Call("add_score", 100);
 ```
 
-### Exposing C# to GDScript via GDExtension
+### Using C# Classes from GDScript
 
-Create a `.gdextension` file to expose C# classes to GDScript projects.
+C# and GDScript classes in the same project can use each other directly. Mark C# classes
+with `[GlobalClass]` to make them appear in the editor's "Create New Node/Resource" dialogs
+and usable by name in GDScript. GDExtension is for native (C++/Rust) libraries, not for C#.
 
 ## Godot 4.7 C# Notes
 
-- C# fully supports new 4.7 features including VirtualJoystick and tween_await()
-- Use `await` with tweens for async animation sequences
-- Export attributes work the same — no changes in 4.7
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools can inspect and modify your project live:
-
-- **`script_read`** — Read C# script files for review
-- **`script_edit`** — Update C# scripts directly
-- **`script_validate`** — Validate C# scripts for syntax errors
-- **`scene_tree`** — Inspect scene hierarchy to verify node composition
-- **`class_db_info`** — Query Godot class info for C# interop patterns
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.
+- New 4.7 APIs are available in C# under PascalCase names, e.g. `tween.TweenAwait(signal)` for `tween_await()` and the `VirtualJoystick` class
+- Await a tween with `await ToSignal(tween, Tween.SignalName.Finished)`
+- Use the .NET build of the editor and the .NET SDK version its release notes require

@@ -19,6 +19,8 @@ Export from CI or an agent shell with zero editor interaction, once presets exis
 
 Create presets once (editor UI is fine) or write entries by hand. Minimal skeletons:
 
+Preset-level keys live in `[preset.N]`; platform options in `[preset.N.options]`:
+
 ```ini
 [preset.0]
 name="Windows Desktop"
@@ -29,16 +31,22 @@ export_path="builds/win/game.exe"
 name="Android"
 platform="Android"
 export_path="builds/android/game.aab"
-gradle_build/use_gradle_build=true        # REQUIRED for native plugins (RevenueCat etc.)
+
+[preset.1.options]
+; Gradle build is required for native plugins (RevenueCat etc.) and for AAB
+gradle_build/use_gradle_build=true
+; 0 = APK, 1 = AAB
+gradle_build/export_format=1
 package/unique_name="com.yourstudio.game"
 
 [preset.2]
 name="iOS"
 platform="iOS"
-export_path="builds/ios/game.xcodeproj"
+export_path="builds/ios/game.ipa"
 ```
 
-After hand-editing presets, validate with a real export — typos fail at export time.
+After hand-editing presets, validate with a real export — typos fail at export time. Comments
+in `export_presets.cfg` start with `;` and go on their own line.
 
 ## Commands
 
@@ -48,9 +56,9 @@ godot --headless --path . --export-debug "Android" builds/android/debug.apk
 
 # Release build (store submission)
 godot --headless --path . --export-release "Windows Desktop" builds/win/game.exe
-godot --headless --path . --export-release "Android" builds/android/game.aab    # AAB = Play Store
-godot --headless --path . --export-release "Android" builds/android/game.apk    # APK = sideload/Galaxy Store
-godot --headless --path . --export-release "iOS" builds/ios/                     # Xcode project folder
+godot --headless --path . --export-release "Android" builds/android/game.aab    # AAB = Play Store (export_format = AAB)
+godot --headless --path . --export-release "Android" builds/android/game.apk    # APK = sideload (export_format = APK)
+godot --headless --path . --export-release "iOS" builds/ios/game.ipa            # Xcode project (+ .ipa on macOS)
 ```
 
 Exit code 0 + file exists = success. On failure read the FULL log — export errors cascade
@@ -63,9 +71,9 @@ Debug keystore is automatic. For release:
 ```bash
 keytool -genkeypair -v -keystore release.keystore -alias game -keyalg RSA -validity 10000
 
-export GODOT_ANDROID_KEYSTORE_PATH=/abs/path/release.keystore
-export GODOT_ANDROID_KEYSTORE_USER=game
-export GODOT_ANDROID_KEYSTORE_PASSWORD=secret
+export GODOT_ANDROID_KEYSTORE_RELEASE_PATH=/abs/path/release.keystore
+export GODOT_ANDROID_KEYSTORE_RELEASE_USER=game
+export GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD=secret
 godot --headless --path . --export-release "Android" builds/android/game.aab
 ```
 
@@ -81,11 +89,12 @@ fails, check: JDK version (17), `ANDROID_HOME`, and that plugin versions are mut
 
 ## iOS Pipeline
 
-The export produces an **Xcode project folder** (not an IPA):
+The export always writes an **Xcode project**; on macOS it also builds the `.ipa` unless
+`application/export_project_only` is on:
 
 ```bash
-godot --headless --path . --export-release "iOS" builds/ios/
-# → builds/ios/ contains .xcodeproj — open on macOS, set team/signing, Product → Archive
+godot --headless --path . --export-release "iOS" builds/ios/game.ipa
+# → builds/ios/game.xcodeproj — open on macOS, set team/signing, Product → Archive
 ```
 
 No Mac? Options: GitHub Actions `macos-*` runner, Codemagic, or borrow a Mac for a single

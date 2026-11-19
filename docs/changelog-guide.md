@@ -1,6 +1,6 @@
 # Changelog Guide
 
-This document describes the changelog format and conventions for `@vl4dt/godot-skills`.
+This document describes the changelog format and conventions for `godot-skills`.
 
 ## Format
 
@@ -61,7 +61,7 @@ Always use this order (omit empty sections):
 
 Always use the full skill name in backticks:
 ```markdown
-- Updated `godot-physics` to document VirtualJoystick (Godot 4.7+)
+- Updated `godot-input` to document VirtualJoystick (Godot 4.7+)
 ```
 
 ### Include Godot Version Context
@@ -83,7 +83,7 @@ When a change addresses a tracked issue:
 
 ## Unreleased Section
 
-Maintain an `## [Unreleased]` section at the top for ongoing work:
+Between releases, collect entries in an `## [Unreleased]` section at the top:
 
 ```markdown
 ## [Unreleased]
@@ -92,10 +92,12 @@ Maintain an `## [Unreleased]` section at the top for ongoing work:
 - Work in progress skill: godot-new-feature
 
 ### Changed
-- Refactoring MCP bridge tool registration
+- Expanded `godot-ui` theme examples
 ```
 
-When releasing, rename `## [Unreleased]` to `## [X.Y.Z] — YYYY-MM-DD`.
+When releasing, rename `## [Unreleased]` to `## [X.Y.Z] — YYYY-MM-DD` and tag the release commit
+`vX.Y.Z`. Every version heading has a matching tag — pi installs releases by tag
+(`pi install git:github.com/Narmo/godot-skills@vX.Y.Z`).
 
 ## Semantic Versioning Rules
 
@@ -104,7 +106,6 @@ When releasing, rename `## [Unreleased]` to `## [X.Y.Z] — YYYY-MM-DD`.
 | New skill added | Minor (`1.0.0` → `1.1.0`) | Adding `godot-tweening` |
 | Skill content expanded (no breaking change) | Patch or Minor | Adding patterns to existing skill |
 | Skill renamed or removed | Major | Removing `godot-old-skill` |
-| MCP bridge API change | Minor (compatible) / Major (breaking) | New RPC endpoints |
 | Documentation-only fix | Patch | Typo correction, clarifying text |
 | Godot version bump requirement | Major | Requiring 4.7+ instead of 4.0+ |
 
@@ -119,8 +120,7 @@ Each release in CHANGELOG.md includes:
 
 The `scripts/verify.sh` script checks that CHANGELOG.md exists and has content. Future automation may include:
 - Conventional commit parsing for automatic changelog generation
-- Pre-publish checklist validation
-- Version consistency check (package.json vs git tag)
+- Pre-release checklist validation
 
 ---
 

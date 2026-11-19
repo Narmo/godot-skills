@@ -37,7 +37,6 @@ class_name PlayerController extends CharacterBody2D
 enum State { IDLE, RUNNING, JUMPING, FALLING, ATTACKING }
 
 var current_state: State = State.IDLE
-var velocity: Vector2
 
 func _physics_process(delta: float) -> void:
     match current_state:
@@ -75,6 +74,7 @@ func _ready() -> void:
     for child in get_children():
         if child is FSMState:
             states[child.name] = child
+            child.fsm = self
 
 func initialize(initial: StringName) -> void:
     if not states.has(initial):
@@ -107,41 +107,54 @@ func _unhandled_input(event: InputEvent) -> void:
 ### FSM State Base Class
 
 ```gdscript
-class_name FSMState extends Node
+class_name FSMState
+extends Node
+
+## Set by the FSM that owns this state.
+var fsm: FSM
+
 
 func enter() -> void:
     pass  # Override
 
+
 func exit() -> void:
     pass  # Override
 
-func update(delta: float) -> void:
+
+func update(_delta: float) -> void:
     pass  # Override
 
-func handle_input(event: InputEvent) -> void:
+
+func handle_input(_event: InputEvent) -> void:
     pass  # Override
+
 
 # Helper to transition from within a state
-func request_state(fsm: FSM, new_state: StringName) -> void:
+func transition_to(new_state: StringName) -> void:
     fsm.change_state(new_state)
 ```
 
 ### Concrete State Example
 
 ```gdscript
-# EnemyIdle.gd extends FSMState
-class_name EnemyIdle extends FSMState
+# enemy_idle.gd — a child node of the FSM
+class_name EnemyIdle
+extends FSMState
 
-@export var idle_timer: float = 2.0
+@export var idle_time: float = 2.0
+
 var _timer: float = 0.0
+
 
 func enter() -> void:
     _timer = 0.0
 
+
 func update(delta: float) -> void:
     _timer += delta
-    if _timer >= idle_timer:
-        get_parent().request_state(get_parent().get_node("FSM"), "Patrol")
+    if _timer >= idle_time:
+        transition_to(&"Patrol")
 ```
 
 ## Hierarchical State Machine
@@ -187,93 +200,123 @@ func update(delta: float) -> void:
 
 func _determine_sub_state() -> StringName:
     # Example: switch based on weapon type or enemy distance
-    return "Melee"
+    return &"Melee"
+
+
+func _switch_sub_state(new_sub_state: StringName) -> void:
+    if sub_states.has(active_sub_state):
+        sub_states[active_sub_state].exit()
+    active_sub_state = new_sub_state
+    if sub_states.has(active_sub_state):
+        sub_states[active_sub_state].enter()
 ```
 
 ## Behavior Trees (AI)
 
-For complex AI decision-making:
+For complex AI decision-making. Each node type is its own script (GDScript allows one
+`class_name` per file); build the tree as child nodes in the editor.
 
 ```gdscript
-class_name BehaviorTree extends Node
+# behavior_tree.gd
+class_name BehaviorTree
+extends Node
 
-var root_node: BTNode = null
+## Shared data between nodes, e.g. { "target": Node, "health": int, "last_seen_pos": Vector2 }
+var blackboard: Dictionary = {}
 
-func tick(delta: float, blackboard: Dictionary) -> BTNode.Status:
-    if not root_node:
-        root_node = get_child(0)
-    return root_node.execute(blackboard, delta)
 
-# Blackboard — shared data between nodes
-# { "target": Node, "health": int, "last_seen_pos": Vector2 }
+func _physics_process(delta: float) -> void:
+    var root := get_child(0) as BTNode
+    if root:
+        root.execute(blackboard, delta)
 ```
 
 ### BT Node Types
 
 ```gdscript
-class_name BTNode extends Node
+# bt_node.gd
+class_name BTNode
+extends Node
 
 enum Status { SUCCESS, FAILURE, RUNNING }
 
-func execute(blackboard: Dictionary, delta: float) -> Status:
+
+func execute(_blackboard: Dictionary, _delta: float) -> Status:
     return Status.SUCCESS  # Override in subclasses
+```
 
-# --- Composite Nodes ---
+```gdscript
+# bt_sequence.gd — succeeds when every child succeeds, stops at the first that doesn't
+class_name BTSequence
+extends BTNode
 
-class_name Sequence extends BTNode
-func execute(bb: Dictionary, delta: float) -> Status:
+
+func execute(blackboard: Dictionary, delta: float) -> Status:
     for child in get_children():
-        if child is BTNode:
-            var result = child.execute(bb, delta)
+        var node := child as BTNode
+        if node:
+            var result := node.execute(blackboard, delta)
             if result != Status.SUCCESS:
                 return result
     return Status.SUCCESS
+```
 
-class_name Selector extends BTNode
-func execute(bb: Dictionary, delta: float) -> Status:
+```gdscript
+# bt_selector.gd — succeeds at the first child that succeeds
+class_name BTSelector
+extends BTNode
+
+
+func execute(blackboard: Dictionary, delta: float) -> Status:
     for child in get_children():
-        if child is BTNode:
-            var result = child.execute(bb, delta)
-            if result == Status.SUCCESS:
-                return Status.SUCCESS
+        var node := child as BTNode
+        if node:
+            var result := node.execute(blackboard, delta)
+            if result != Status.FAILURE:
+                return result
     return Status.FAILURE
+```
 
-# --- Leaf Nodes ---
+```gdscript
+# bt_condition.gd — leaf: override check()
+class_name BTCondition
+extends BTNode
 
-class_name Condition extends BTNode
-func check(blackboard: Dictionary) -> bool:
+
+func check(_blackboard: Dictionary) -> bool:
     return true  # Override
 
-func execute(bb: Dictionary, _delta: float) -> Status:
-    return Status.SUCCESS if check(bb) else Status.FAILURE
 
-class_name Action extends BTNode
+func execute(blackboard: Dictionary, _delta: float) -> Status:
+    return Status.SUCCESS if check(blackboard) else Status.FAILURE
+```
+
+```gdscript
+# bt_action.gd — leaf: override do_action(); with a duration it stays RUNNING until done
+class_name BTAction
+extends BTNode
+
 @export var duration: float = 0.0
-var elapsed: float = 0.0
 
-func do_action(blackboard: Dictionary) -> void:
+var _elapsed: float = 0.0
+
+
+func do_action(_blackboard: Dictionary) -> void:
     pass  # Override
 
-func execute(bb: Dictionary, delta: float) -> Status:
-    if duration > 0:
-        elapsed += delta
-        do_action(bb)
-        return Status.SUCCESS if elapsed >= duration else Status.RUNNING
-    else:
-        do_action(bb)
+
+func execute(blackboard: Dictionary, delta: float) -> Status:
+    do_action(blackboard)
+    if duration <= 0.0:
         return Status.SUCCESS
+    _elapsed += delta
+    if _elapsed < duration:
+        return Status.RUNNING
+    _elapsed = 0.0  # ready for the next run
+    return Status.SUCCESS
 ```
 
 ## Godot 4.7 State Notes
 
-- **tween_await()** — Use for state transitions with animated duration: `await get_tree().create_tween().tween_property(...) .finished`
-- **AnimationTree** — Combine FSM logic with AnimationTree state machines for visual feedback
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools can inspect and modify your project live:
-
-- **`scene_tree`** — Inspect scene hierarchy to audit FSM node structure
-- **`script_read`** / **`script_edit`** — Read and modify state machine scripts
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.
+- **`Tween.tween_await(signal)`** — a state's enter/exit animation can wait for a signal inside one tween
+- **AnimationTree** — combine FSM logic with AnimationTree state machines for visual feedback

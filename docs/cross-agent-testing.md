@@ -1,36 +1,40 @@
 # Cross-Agent Testing Documentation
 
-This document describes how to test @vl4dt/godot-skills across supported coding agents.
+This document describes how to test godot-skills across supported coding agents.
 
 ## Validation Checklist
 
-Run these checks before publishing or releasing a new version:
+Run the release gate before releasing a new version:
+
+```bash
+bash scripts/verify.sh          # or scripts/verify.ps1 on Windows
+```
+
+It runs `scripts/validate-skills.sh`, `scripts/lint-skills.sh` and `scripts/check-agent-extensions.sh` plus the structural checks. The tables below show what those scripts check, for debugging a failure by hand.
 
 ### 1. SKILL.md Standard Compliance
 
 | Check | Command | Expected |
 |-------|---------|----------|
-| All SKILL.md files exist | `find skills/*/SKILL.md` | 7 files |
-| Valid YAML frontmatter | `grep -c '^name:\|^description:\|^license:' skills/*/SKILL.md` | ≥3 per file |
+| Every skill has a SKILL.md | `ls skills/*/SKILL.md` | One per skill directory |
+| Required frontmatter | `grep -c '^name:\|^description:\|^license:\|^compatibility:\|^metadata:' skills/*/SKILL.md` | 5 per file |
 | Progressive disclosure (<500 lines) | `wc -l skills/*/SKILL.md` | All <500 |
-| Kebab-case naming | `ls skills/` | All match `godot-*` pattern |
+| Kebab-case naming | `ls skills/` | All match `godot-*`, and each `name:` matches its directory |
 
 ### 2. Agent-Specific Extensions
 
 | Check | Command | Expected |
 |-------|---------|----------|
-| agents/ directory exists per skill | `find skills/*/agents -type d` | 7 dirs |
-| claude-code.yaml present | `find skills/*/agents/claude-code.yaml` | 7 files |
-| openai.yaml present | `find skills/*/agents/openai.yaml` | 7 files |
-| Safety notice present | `grep -rl 'Safely ignored' skills/*/agents/` | 14 files |
+| claude-code.yaml present | `ls skills/*/agents/claude-code.yaml` | One per skill |
+| openai.yaml present | `ls skills/*/agents/openai.yaml` | One per skill |
+| Safety notice present | `grep -rL 'Safely ignored by other agents' skills/*/agents/` | No output |
 
 ### 3. No Agent-Specific Leakage
 
 | Check | Command | Expected |
 |-------|---------|----------|
 | No Python try/except in GDScript | `grep -rn '^\s*try:' --include='*.gd' skills/` | 0 results |
-| No Claude Code syntax in SKILL.md | `grep -rl 'claude-code' --include='SKILL.md' skills/` | 0 results |
-| No OpenAI-specific tools in SKILL.md | `grep -rl 'openai\|codex' --include='SKILL.md' skills/` | 0 results |
+| No agent names in SKILL.md | `grep -rli 'claude-code\|openai\|codex' --include='SKILL.md' skills/` | 0 results |
 
 ### 4. Script References
 
@@ -42,27 +46,26 @@ Run these checks before publishing or releasing a new version:
 
 ## Per-Agent Testing Instructions
 
+Claude Code, Codex CLI and Cline expect one directory per skill (`<skills-dir>/<skill-name>/SKILL.md`), so copy the *contents* of `skills/`.
+
 ### pi-agent
 
 ```bash
-# Install from local path
+# Install from a local path into the current project
 pi install ./path/to/godot-skills -l
 
-# Verify skill discovery
-pi skills list
+# Confirm the package is configured
+pi list
 
 # Test each skill by description trigger
 # e.g., prompt: "help me set up a new Godot project"
-# Should trigger: godot-project-setup
+# Should trigger: godot-project-setup (force it with /skill:godot-project-setup)
 ```
 
 ### Claude Code
 
 ```bash
-# Copy skills directory
-cp -r /path/to/godot-skills/skills ~/.claude/skills/
-
-# Verify by checking skill files are readable
+mkdir -p ~/.claude/skills && cp -R /path/to/godot-skills/skills/. ~/.claude/skills/
 ls ~/.claude/skills/godot-*/SKILL.md
 
 # Test with a prompt like: "I want to design game architecture for an RPG"
@@ -71,11 +74,8 @@ ls ~/.claude/skills/godot-*/SKILL.md
 ### Codex CLI (OpenAI)
 
 ```bash
-# Copy skills directory
-cp -r /path/to/godot-skills/skills ~/.codex/skills/
-
-# Verify by checking skill files are readable
-ls ~/.codex/skills/godot-*/SKILL.md
+mkdir -p ~/.agents/skills && cp -R /path/to/godot-skills/skills/. ~/.agents/skills/
+ls ~/.agents/skills/godot-*/SKILL.md
 
 # Test with a prompt like: "help me debug a Godot error"
 ```
@@ -83,10 +83,7 @@ ls ~/.codex/skills/godot-*/SKILL.md
 ### Cline
 
 ```bash
-# Copy skills directory
-cp -r /path/to/godot-skills/skills ~/.cline/skills/
-
-# Verify by checking skill files are readable
+mkdir -p ~/.cline/skills && cp -R /path/to/godot-skills/skills/. ~/.cline/skills/
 ls ~/.cline/skills/godot-*/SKILL.md
 ```
 
@@ -100,68 +97,44 @@ These agents use `.cursorrules` or `.windsurfrules`. Test by:
 
 ## Description Trigger Matrix
 
+Taken from each skill's `agents/claude-code.yaml`:
+
 | Skill | Trigger Phrase Examples |
 |-------|------------------------|
-| godot-project-setup | "create new Godot project", "scaffold Godot", "Godot folder structure" |
-| godot-brainstorming | "design game architecture", "state machine Godot", "multiplayer setup" |
-| godot-gdscript-patterns | "write GDScript", "Godot signals", "node composition" |
-| godot-csharp-patterns | "C# Godot", "Mono patterns", "Export attributes" |
-| godot-code-review | "review Godot code", "performance checklist", "memory leak" |
-| godot-debugging | "debug Godot", "profiler", "Godot error" |
-| godot-4.7-migration | "upgrade to Godot 4.7", "Godot migration", "new Godot features" |
+| godot-47-migration | "migrating to Godot 4.7", "Godot version upgrade", "breaking changes in Godot 4.7" |
+| godot-animation | "animation systems in Godot", "Godot AnimationTree and state machines", "Godot blend spaces" |
+| godot-architecture | "designing Godot game architecture", "Godot scene composition patterns", "ECS patterns in Godot" |
+| godot-audio | "implementing audio in Godot", "Godot sound effects", "audio bus mixing Godot" |
+| godot-brainstorming | "designing Godot game architecture", "Godot scene organization", "Godot state machine patterns" |
+| godot-code-review | "reviewing Godot code", "Godot performance checklist", "Godot memory leak detection" |
+| godot-csharp-patterns | "writing C# code in Godot", "Godot Mono / C# patterns", "Export attributes in Godot" |
+| godot-debugging | "debugging Godot errors", "profiling Godot performance", "resolving Godot crashes" |
+| godot-dialog-systems | "building dialogue systems in Godot", "Godot branching narrative", "NPC conversation Godot" |
+| godot-gdscript-patterns | "writing GDScript code", "Godot signals and events", "node composition in Godot" |
+| godot-headless-workflow | "building or modifying a Godot game from a coding agent", "validating GDScript changes without opening the editor", "running Godot tests in CI" |
+| godot-i18n | "localizing Godot games", "Godot translation system", "i18n Godot patterns" |
+| godot-input | "implementing input in Godot", "Godot gamepad support", "input remapping Godot" |
+| godot-inventory-economy | "building inventory systems in Godot", "Godot item management", "game economy Godot" |
+| godot-networking | "networking and multiplayer in Godot", "Godot RPC system and replication", "Godot server-authoritative games" |
+| godot-pck-encryption | "encrypting a Godot export PCK", "compiling Godot export templates with an encryption key", "setting SCRIPT_AES256_ENCRYPTION_KEY or GODOT_SCRIPT_ENCRYPTION_KEY" |
+| godot-performance | "performance optimization in Godot", "Godot profiling and benchmarking", "Godot draw call reduction" |
+| godot-physics | "physics systems in Godot", "Godot collision layers and masks", "Godot rigid body dynamics" |
+| godot-project-setup | "creating a new Godot project", "setting up Godot project structure", "Godot export presets" |
+| godot-save-systems | "implementing save systems in Godot", "Godot persistence patterns", "save file serialization Godot" |
+| godot-shaders-vfx | "writing shaders in Godot", "Godot visual effects", "particle systems Godot" |
+| godot-state-management | "implementing state machines in Godot", "Godot FSM patterns", "behavior trees Godot AI" |
+| godot-ui | "UI development in Godot", "Godot Control nodes and containers", "Godot custom themes and styling" |
 
-## Automated Validation Script
+## Release Checklist
 
-Save as `scripts/validate-skills.sh` for CI integration:
-
-```bash
-#!/bin/bash
-set -e
-cd "$(dirname "$0")/.."
-
-errors=0
-
-# Check all SKILL.md files have required frontmatter
-for skill_dir in skills/*/; do
-    skill_md="$skill_dir/SKILL.md"
-    [ -f "$skill_md" ] || { echo "MISSING: $skill_md"; errors=$((errors+1)); continue; }
-    
-    for field in name description license; do
-        grep -q "^$field:" "$skill_md" || { echo "MISSING frontmatter: $field in $(basename $skill_dir)"; errors=$((errors+1)); }
-    done
-    
-    lines=$(wc -l < "$skill_md")
-    [ "$lines" -lt 500 ] || { echo "TOO LONG: $(basename $skill_dir) has $lines lines"; errors=$((errors+1)); }
-done
-
-# Check agent extensions
-for skill_dir in skills/*/; do
-    for agent_file in claude-code.yaml openai.yaml; do
-        [ -f "$skill_dir/agents/$agent_file" ] || { echo "MISSING: agents/$agent_file in $(basename $skill_dir)"; errors=$((errors+1)); }
-    done
-done
-
-# Check package.json
-node -e "const d=require('./package.json'); if(!d.pi?.skills) throw new Error('missing pi manifest');" 2>/dev/null || { echo "ERROR: package.json invalid"; errors=$((errors+1)); }
-
-[ "$errors" -eq 0 ] && echo "All checks passed!" || { echo "$errors check(s) failed"; exit 1; }
-```
-
-## Publishing Checklist
-
-- [x] All SKILL.md files pass frontmatter validation
-- [x] All SKILL.md bodies under 500 lines (max: 231 — godot-csharp-patterns)
-- [x] Skill names follow kebab-case with `godot-` prefix
-- [x] Agent-specific extensions present for all 7 skills (14 files total)
-- [x] No agent-specific features leak into core SKILL.md instructions
-- [x] package.json has scoped npm name (`@vl4dt/godot-skills`) and pi manifest
-- [x] LICENSE is MIT
-- [x] pi-package keyword present in package.json
-- [x] README.md, AGENTS.md, docs/contributing.md present
-- [x] Total package size under 1MB (current: 115K)
+- [ ] `bash scripts/verify.sh` passes
+- [ ] Every new or changed skill loads in pi (`pi --skill ./skills/<skill-name> "Test"`)
+- [ ] README skill table lists every directory in `skills/`
+- [ ] CHANGELOG `[Unreleased]` covers the release
+- [ ] LICENSE is MIT
 
 ## Known Limitations
 
 - Gemini CLI and Kiro have partial/unknown support — test manually
 - Cursor/Windsurf require manual `.cursorrules` configuration
-- Agent-specific YAML files are safely ignored by agents that don't recognize them, but may appear as unknown config warnings in strict-mode agents
+- `agents/openai.yaml` uses Codex's format (`interface`, `policy`); `agents/claude-code.yaml` uses this repository's own format and is not read by Claude Code or pi. Strict-mode agents may warn about unknown config

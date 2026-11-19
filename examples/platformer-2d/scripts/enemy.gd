@@ -1,47 +1,35 @@
-## Simple patrol enemy.
-## Demonstrates: CharacterBody2D, state machine, and collision triggers.
-
+## Patrol enemy that walks back and forth and can be stomped.
+## Demonstrates: CharacterBody2D gravity, patrol bounds, and wall detection.
 class_name Enemy
 extends CharacterBody2D
-
-signal defeated
 
 const GRAVITY := 980.0
 const SPEED := 60.0
 
 @export var patrol_distance: float = 100.0
-@onready var sprite := $Sprite2D
 
-var _start_position: Vector2
-var _direction: int = 1
+var _start_x: float
+var _direction := 1.0
 
 
 func _ready() -> void:
-	_start_position = position
-	collision_layer = 2  # enemy layer
-	collision_mask = 3 | 4  # player + platforms
+	_start_x = global_position.x
 
 
 func _physics_process(delta: float) -> void:
 	velocity.y += GRAVITY * delta
+
+	# Turn around at the patrol bounds, or when a wall blocks the way.
+	var offset := global_position.x - _start_x
+	var past_bounds := (offset >= patrol_distance and _direction > 0.0) \
+			or (offset <= -patrol_distance and _direction < 0.0)
+	var blocked := is_on_wall() and signf(get_wall_normal().x) == -_direction
+	if past_bounds or blocked:
+		_direction = -_direction
+
 	velocity.x = _direction * SPEED
-
-	# Reverse direction at patrol bounds
-	var distance_from_start := abs(position.x - _start_position.x)
-	if distance_from_start >= patrol_distance:
-		_direction *= -1
-		if sprite:
-			sprite.flip_h = _direction < 0
-
-	# Reverse on wall collision
-	if is_on_wall():
-		_direction *= -1
-		if sprite:
-			sprite.flip_h = _direction < 0
-
 	move_and_slide()
 
 
-func take_damage() -> void:
-	defeated.emit()
+func defeat() -> void:
 	queue_free()

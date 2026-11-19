@@ -1,101 +1,80 @@
-## Lobby UI with player list and controls.
-## Demonstrates: Container layout, signal-driven updates, VBoxContainer/HBoxContainer,
-## and RPC-based state synchronization.
+## Lobby UI: host/join controls, the player list, and the ready button.
+## Demonstrates: container layout, unique node names (%Name), and UI that only
+## reacts to MultiplayerManager signals instead of reading network state.
+extends Control
 
-extends PanelContainer
+@export var manager: MultiplayerManager
 
-@onready var create_btn := $VBox/CreateBtn
-@onready var join_btn := $VBox/JoinBtn
-@onready var ready_btn := $VBox/ReadyBtn
-@onready var disconnect_btn := $VBox/DisconnectBtn
-@onready var player_list := $VBox/PlayerList
-@onready var status_label := $VBox/StatusLabel
-@onready var room_id_label := $VBox/RoomIdLabel
-
-var _is_ready: bool = false
+@onready var _name_edit: LineEdit = %NameEdit
+@onready var _address_edit: LineEdit = %AddressEdit
+@onready var _host_button: Button = %HostButton
+@onready var _join_button: Button = %JoinButton
+@onready var _ready_button: Button = %ReadyButton
+@onready var _leave_button: Button = %LeaveButton
+@onready var _status_label: Label = %StatusLabel
+@onready var _player_list: VBoxContainer = %PlayerList
 
 
 func _ready() -> void:
-	create_btn.pressed.connect(_on_create_pressed)
-	join_btn.pressed.connect(_on_join_pressed)
-	ready_btn.pressed.connect(_on_ready_pressed)
-	disconnect_btn.pressed.connect(_on_disconnect_pressed)
-
-	# Connect to multiplayer manager signals
-	var manager := get_node_or_null("../MultiplayerManager") as MultiplayerManager
-	if manager:
-		manager.player_joined.connect(_on_player_joined)
-		manager.player_left.connect(_on_player_left)
-		manager.room_created.connect(_on_room_created)
-		manager.game_started.connect(_on_game_started)
-		manager.connection_status_changed.connect(_on_status_changed)
-
-	_ready_btn_enabled(false)
+	_host_button.pressed.connect(_on_host_pressed)
+	_join_button.pressed.connect(_on_join_pressed)
+	_ready_button.pressed.connect(manager.toggle_ready)
+	_leave_button.pressed.connect(_on_leave_pressed)
+	manager.players_updated.connect(_on_players_updated)
+	manager.status_changed.connect(_on_status_changed)
+	manager.game_started.connect(_on_game_started)
+	_set_in_lobby(false)
 
 
-func _on_create_pressed() -> void:
-	var manager := get_node("../MultiplayerManager") as MultiplayerManager
-	manager.create_room()
-	manager.register_player.remote("Host Player")
-	_create_join_buttons(false)
-	_ready_btn_enabled(true)
+func _on_host_pressed() -> void:
+	var err := manager.host(_name_edit.text)
+	if err != OK:
+		_status_label.text = "Could not host: %s" % error_string(err)
+		return
+	_set_in_lobby(true)
 
 
 func _on_join_pressed() -> void:
-	var manager := get_node("../MultiplayerManager") as MultiplayerManager
-	manager.join_room("127.0.0.1")  # Local for demo
-	manager.register_player.remote("Client Player")
-	_create_join_buttons(false)
-	_ready_btn_enabled(true)
+	var err := manager.join(_address_edit.text, _name_edit.text)
+	if err != OK:
+		_status_label.text = "Could not join: %s" % error_string(err)
+		return
+	_set_in_lobby(true)
 
 
-func _on_ready_pressed() -> void:
-	var manager := get_node("../MultiplayerManager") as MultiplayerManager
-	_is_ready = not _is_ready
-	manager.set_ready.remote(_is_ready)
-	ready_btn.text = "Ready!" if _is_ready else "Set Ready"
+func _on_leave_pressed() -> void:
+	manager.leave()
+	_set_in_lobby(false)
 
 
-func _on_disconnect_pressed() -> void:
-	var manager := get_node("../MultiplayerManager") as MultiplayerManager
-	manager.disconnect_from_room()
-	_create_join_buttons(true)
-	_ready_btn_enabled(false)
-	status_label.text = "Disconnected"
-
-	# Clear player list
-	for child in player_list.get_children():
+func _on_players_updated(players: Dictionary) -> void:
+	for child in _player_list.get_children():
 		child.queue_free()
-
-
-func _on_player_joined(player_id: int, player_name: String) -> void:
-	var label := Label.new()
-	label.text = player_name + " (ID: " + str(player_id) + ")"
-	player_list.add_child(label)
-
-
-func _on_player_left(player_id: int, player_name: String) -> void:
-	status_label.text = player_name + " left the room"
-
-
-func _on_room_created(room_id: String) -> void:
-	room_id_label.text = "Room: " + room_id
-
-
-func _on_game_started() -> void:
-	status_label.text = "Game Starting!"
-	ready_btn.visible = false
+	for id: int in players:
+		var info: Dictionary = players[id]
+		var label := Label.new()
+		label.text = "%s%s" % [info["name"], "  (ready)" if info["ready"] else ""]
+		_player_list.add_child(label)
+	# An empty list means we just left; the peer may already be gone.
+	var me: Dictionary = {} if players.is_empty() else players.get(multiplayer.get_unique_id(), {})
+	_ready_button.text = "Not ready" if me.get("ready", false) else "Set ready"
 
 
 func _on_status_changed(status: String) -> void:
-	status_label.text = "Status: " + status.capitalize()
+	_status_label.text = status
+	if status == "Disconnected" or status == "Connection failed" or status == "Host left the lobby":
+		_set_in_lobby(false)
 
 
-func _create_join_buttons(enabled: bool) -> void:
-	create_btn.visible = enabled
-	join_btn.visible = enabled
+func _on_game_started() -> void:
+	_ready_button.disabled = true
 
 
-func _ready_btn_enabled(enabled: bool) -> void:
-	if ready_btn:
-		ready_btn.disabled = not enabled
+func _set_in_lobby(in_lobby: bool) -> void:
+	_host_button.visible = not in_lobby
+	_join_button.visible = not in_lobby
+	_name_edit.editable = not in_lobby
+	_address_edit.editable = not in_lobby
+	_ready_button.visible = in_lobby
+	_ready_button.disabled = false
+	_leave_button.visible = in_lobby

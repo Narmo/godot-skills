@@ -30,142 +30,162 @@ Systematic approach to profiling, optimizing, and debugging performance in Godot
 
 ## Profiling Workflow
 
-### Built-in Profiler
+### Built-in Profilers
 
-Access the profiler via Debug > Start Profiling or press Ctrl+Shift+P.
+The editor's bottom **Debugger** panel has the tools; they work on a running debug build
+(started from the editor, or a debug export with remote debugging):
+
+- **Profiler** — time per script function, physics and process callbacks
+- **Visual Profiler** — CPU and GPU time per rendering step
+- **Monitors** — FPS, memory, object counts, draw calls over time
+- **Network Profiler** — RPC and synchronizer traffic
+
+Measure a specific section in code:
 
 ```gdscript
-# Enable profiling in your project settings:
-# Project Settings > Debug > Profile Every Frame = true
-
-# Use time measure for specific code sections
-var start_time = Time.get_ticks_usec()
+var start_usec := Time.get_ticks_usec()
 # ... expensive operation ...
-var elapsed = Time.get_ticks_usec() - start_time
-print("Operation took: ", elapsed, " us")
+print("Operation took: ", Time.get_ticks_usec() - start_usec, " us")
 ```
 
 ### CPU/GPU Usage Monitoring
 
 ```gdscript
-# Display FPS and frame time in debug overlay
-# Project Settings > Debug > Show FPS = true
-
-# Monitor specific metrics
-func get_performance_stats():
-    var stats = {
-        fps: Performance.get_monitor(Performance.TIME_FPS),
-        frame_time: Performance.get_monitor(Performance.TIME_FRAME_DURATION),
-        draw_calls: Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
-        active_objects: Performance.get_monitor(Performance.OBJECT_COUNT),
-        mem_alloc: Performance.get_monitor(Performance.MEMORY_STATIC),
-        mem_pool: Performance.get_monitor(Performance.MEMORY_STATIC_SPECIALIZATION)
+# Print FPS to stdout: Project Settings > debug/settings/stdout/print_fps
+func get_performance_stats() -> Dictionary:
+    return {
+        "fps": Performance.get_monitor(Performance.TIME_FPS),
+        "process_time": Performance.get_monitor(Performance.TIME_PROCESS),
+        "physics_time": Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS),
+        "draw_calls": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+        "objects": Performance.get_monitor(Performance.OBJECT_COUNT),
+        "nodes": Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
+        "static_memory": Performance.get_monitor(Performance.MEMORY_STATIC),
+        "video_memory": Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED),
     }
-    return stats
 ```
 
 ### Profiling Checklist
 
-1. **Start with a clean build** — Profile the exported release build, not the debug version
-2. **Enable all profiler categories** — CPU, GPU, Physics, Rendering, Audio
+1. **Profile on the target device** — use a debug export with remote debugging; the profilers need a debug build
+2. **Check every view** — Profiler for scripts, Visual Profiler for rendering, Monitors for memory and draw calls
 3. **Record a representative gameplay segment** — 30-60 seconds of typical play
-4. **Identify hotspots** — Look for functions consuming >5% of frame time
-5. **Profile before and after changes** — Measure impact of each optimization
+4. **Identify hotspots** — look for functions consuming >5% of frame time
+5. **Measure before and after each change**, and confirm the final frame times in a release build
 
 ## Memory Management
 
-### ResourceCache Pattern
+### Resource Cache Pattern
 
-Preload and cache frequently-used resources.
+`load()` already returns the cached copy while something holds a reference; a cache keeps
+frequently used resources alive between uses.
 
 ```gdscript
-class_name ResourceCache extends Node
+class_name ResourceCache
+extends RefCounted
 
-static var _cache := {}
+static var _cache: Dictionary[String, Resource] = {}
 
-static func preload_resource(path: String) -> Variant:
+
+static func get_resource(path: String) -> Resource:
     if not _cache.has(path):
-        var res = load(path)
-        if res:
-            _cache[path] = res
-        else:
+        var res := load(path)
+        if res == null:
             push_warning("Failed to load resource: " + path)
+            return null
+        _cache[path] = res
     return _cache[path]
 
-static func get_scene(path: String) -> PackedScene:
-    return preload_resource(path) as PackedScene
 
+static func get_scene(path: String) -> PackedScene:
+    return get_resource(path) as PackedScene
+```
+
+```gdscript
 # Usage
-var bullet_scene = ResourceCache.get_scene("res://scenes/entities/bullet.tscn")
-var bullet = bullet_scene.instantiate()
+var bullet_scene := ResourceCache.get_scene("res://scenes/entities/bullet.tscn")
+var bullet := bullet_scene.instantiate()
 ```
 
 ### Instance Pooling Pattern
 
-Reuse objects instead of creating/destroying them.
+Reuse nodes instead of creating and freeing them. GDScript has no generics, so the pool works
+with a `PackedScene` and plain `Node`s:
 
 ```gdscript
-class_name ObjectPool<T> extends Node where T is RefCounted
+class_name NodePool
+extends Node
 
+@export var scene: PackedScene
 @export var pool_size: int = 20
-var _pool: Array[T] = []
-var _active: Array[T] = []
 
-func _ready():
-    for i in range(pool_size):
-        var instance = create_instance()
-        instance.set_process_mode(PROCESS_MODE_ALWAYS)
-        add_child(instance as Node)
-        _pool.append(instance as T)
+var _free: Array[Node] = []
 
-func get_free() -> T:
-    if _pool.size() > 0:
-        var obj = _pool.pop_back()
-        obj.set_active(true)
-        _active.append(obj)
-        return obj
-    return null
 
-func release(obj: T) -> void:
-    obj.set_active(false)
-    _active.erase(obj)
-    _pool.append(obj)
+func _ready() -> void:
+    for i in pool_size:
+        var node := scene.instantiate()
+        _deactivate(node)
+        add_child(node)
+        _free.append(node)
+
+
+func acquire() -> Node:
+    var node: Node = _free.pop_back() if not _free.is_empty() else scene.instantiate()
+    if node.get_parent() == null:
+        add_child(node)
+    node.process_mode = Node.PROCESS_MODE_INHERIT
+    node.show()
+    return node
+
+
+func release(node: Node) -> void:
+    _deactivate(node)
+    _free.append(node)
+
+
+func _deactivate(node: Node) -> void:
+    node.process_mode = Node.PROCESS_MODE_DISABLED
+    node.hide()
 ```
+
 ## Instancing Optimization
 
 ### Packed Scene Best Practices
 
 ```gdscript
-# preload() for always-needed scenes (compile-time)
-const BulletScene = preload("res://scenes/entities/bullet.tscn")
+# preload() for always-needed scenes (loaded with the script)
+const BulletScene := preload("res://scenes/entities/bullet.tscn")
 
-func spawn_bullet():
-    var bullet = BulletScene.instantiate()
-    add_child(bullet)
+var current_level: Node
+
+
+func spawn_bullet() -> void:
+    add_child(BulletScene.instantiate())
+
 
 # load() for conditional scenes (runtime)
-func load_level(level_name: String):
-    var path = "res://levels/" + level_name + ".tscn"
-    var scene = load(path)  # Cached by Godot internally
+func load_level(level_name: String) -> void:
+    var scene := load("res://levels/%s.tscn" % level_name) as PackedScene
     if scene:
         current_level = scene.instantiate()
         add_child(current_level)
 ```
 
+For big levels, load in the background with `ResourceLoader.load_threaded_request()` and poll
+`ResourceLoader.load_threaded_get_status()`.
+
 ### Level of Detail (LOD)
 
-Use LOD to reduce rendering cost for distant objects.
+Godot 4 generates mesh LODs on import and picks them automatically (`mesh_lod_threshold` on the
+viewport). For hand-made LOD models, use visibility ranges instead of a script:
 
 ```gdscript
-class_name LODObject extends Node3D
-
-@export var lod_distances: PackedFloat32Array = [10.0, 30.0, 60.0]
-@onready var lod_nodes = [$HighDetail, $MediumDetail, $LowDetail]
-
-func _process():
-    var dist = global_position.distance_to(get_viewport().get_camera3D().global_position)
-    for i in range(lod_nodes.size()):
-        lod_nodes[i].visible = dist < lod_distances[i]
+# Each LOD node shows only inside its distance band
+$HighDetail.visibility_range_end = 10.0
+$MediumDetail.visibility_range_begin = 10.0
+$MediumDetail.visibility_range_end = 30.0
+$LowDetail.visibility_range_begin = 30.0
 ```
 
 ### Instanced Rendering
@@ -174,125 +194,100 @@ Use `MultiMeshInstance2D/3D` for many similar objects.
 
 ```gdscript
 # Draw 1000 identical trees with a single draw call
-var mesh = preload("res://models/tree.tscn")
-var multi_mesh = MultiMesh.new()
-multi_mesh.mesh = mesh.resource
-multi_mesh.transform_format = MultiMesh.TRANSFORM_3D
+var multi_mesh := MultiMesh.new()
+multi_mesh.transform_format = MultiMesh.TRANSFORM_3D  # set before instance_count
+multi_mesh.mesh = preload("res://models/tree_mesh.tres")
 multi_mesh.instance_count = 1000
 
-for i in range(1000):
-    var x = randf() * 200 - 100
-    var z = randf() * 200 - 100
-    multi_mesh.set_instance_transform(i, Transform3D(Basis(), Vector3(x, 0, z)))
+for i in multi_mesh.instance_count:
+    var position := Vector3(randf_range(-100.0, 100.0), 0.0, randf_range(-100.0, 100.0))
+    multi_mesh.set_instance_transform(i, Transform3D(Basis(), position))
 
-$MultiMeshInstance3D.multi_mesh = multi_mesh
+$MultiMeshInstance3D.multimesh = multi_mesh
 ```
+
 ## Render Passes and Draw Calls
 
 ### Minimizing Draw Calls
 
 ```gdscript
-# BAD: Many small sprites (many draw calls)
-for i in range(100):
-    var sprite = Sprite2D.new()
+# BAD: hundreds of individual sprites for static ground cover
+for i in 100:
+    var sprite := Sprite2D.new()
     sprite.texture = grass_texture
     add_child(sprite)
 
-# GOOD: Use TileMap or MultiMesh (single draw call)
-# TileMap handles batching automatically
-# Or use a custom mesh with instanced rendering
+# GOOD: TileMapLayer (tiles are batched in rendering quadrants)
+# or a MultiMeshInstance2D for many identical moving objects
 ```
 
-### Render Pass Optimization
+### Renderer Choice
 
-- **Forward+** renderer: Better for many lights, use for 3D games
-- **Mobile** renderer: Fewer passes, better for low-end devices
-- **Stencil shadows**: Use shadow maps instead of volumetric shadows when possible
-- **LightmapGI**: Bake static lighting to avoid real-time shadows
+- **Forward+**: highest quality and many lights — desktop 3D games
+- **Mobile**: fewer passes — mobile and low-end devices
+- **Compatibility**: OpenGL-based — oldest hardware and the web
+- **LightmapGI**: bake static lighting to avoid real-time GI and shadows
 
-```gdscript
-# Set renderer in Project Settings > Rendering > Renderer
-# Forward Plus: Better quality, higher cost
-# Mobile: Optimized for low-end hardware
-```
+Set the renderer in Project Settings > Rendering > Renderer (`rendering/renderer/rendering_method`).
+
 ## Mobile-Specific Optimizations
 
 ### Texture Compression
 
-```gdscript
-# Project Settings > Export > Android/iOS
-# Set texture format:
-# - ASTC: Best quality/size ratio (modern devices)
-# - ETC2: Fallback for older Android devices
-# - DXT: Desktop only
-# Use compressed textures in the editor:
-# Texture > Compressed = True
-```
+- Enable the formats you ship: `rendering/textures/vram_compression/import_etc2_astc` (mobile) and `import_s3tc_bptc` (desktop)
+- In the Import dock, set large textures to **Compress > Mode: VRAM Compressed**
+- Use **Lossless** only for small UI textures and pixel art
 
 ### Mobile Rendering Tips
 
-- Use **Mobile renderer** instead of Forward+ for Android/iOS
-- Limit active lights per object (use light masks)
-- Bake static lighting with LightmapGI
-- Use smaller shadow map sizes (512x512 or 256x256)
-- Disable post-processing effects when not needed
-- Use `CanvasGroup` to batch UI rendering
+- Use the **Mobile** renderer instead of Forward+ for Android/iOS
+- Limit lights per object; bake static lighting with LightmapGI
+- Use smaller shadow atlases and fewer shadow-casting lights
+- Disable post-processing effects you don't need
 - Set `texture_filter` to `TEXTURE_FILTER_NEAREST` for pixel art
 
 ### CPU Optimization for Mobile
 
-- Avoid `_get_node()` in _process — use `@onready` instead
-- Minimize `_instantiate()` calls — use object pooling
-- Use `NavigationServer3D` for pathfinding (avoids scene tree overhead)
-- Batch physics queries instead of individual raycasts
-- Use `PhysicsServer3D` directly for bulk operations
+- Avoid `get_node()` / `$Path` lookups in `_process` — cache them with `@onready`
+- Avoid calling `instantiate()` every frame — use object pooling
+- Use `NavigationServer2D/3D` queries for pathfinding instead of scene-tree searches
+- Batch physics queries instead of issuing many individual raycasts
+- Use `PhysicsServer2D/3D` directly for bulk operations
 
 ## Godot 4.7 Performance Features
 
 ### Perfetto Tracing for Android (Godot 4.7)
 
-Perfetto provides detailed profiling data for Android builds.
-
-```gdscript
-# Enable in Project Settings > Debug
-# Perfetto tracing captures:
-# - Frame timing breakdown
-# - GC pauses
-# - Thread scheduling
-# - GPU command queue
-
-# After export, run:
-# godot --perfetto-trace output.perfetto
-# Then open in https://ui.perfetto.dev/
-```
+Godot 4.7 makes Perfetto the default tracing tool for Android editor and template builds, so
+engine work shows up in Android's own system traces next to CPU scheduling, GPU and memory data.
+Record a trace with the Perfetto UI (<https://ui.perfetto.dev/>) or `adb shell perfetto` while
+the game runs on the device, then open it in the Perfetto UI.
 
 ### Nearest-Neighbor Viewport Scaling (Godot 4.7)
 
-Pixel-perfect scaling for retro-style games.
+Render 3D at a lower resolution and upscale without filtering, for crisp retro 3D:
 
 ```gdscript
-# Project Settings > Display > Window > Stretch Mode
-stretch_mode = CanvasGroup.STRETCH_MODE_SCALE
-stretch_aspect = CanvasGroup.STRETCH_ASPECT_KEEP
-
-# Godot 4.7: Use nearest-neighbor scaling for crisp pixel art
-texture_filter = TextureFilter.NEAREST
-
-# Calculate integer scale factor
-func get_viewport_scale() -> int:
-    var target_width = 320  # Original game resolution
-    return max(1, int(DisplayServer.window_get_size().x / target_width))
+func use_retro_3d_scaling() -> void:
+    var viewport := get_viewport()
+    viewport.scaling_3d_mode = Viewport.SCALING_3D_MODE_NEAREST  # new in 4.7
+    viewport.scaling_3d_scale = 0.5  # render at half resolution
 ```
+
+The same settings exist as `rendering/scaling_3d/mode` and `rendering/scaling_3d/scale`. For
+2D pixel art, use stretch mode `viewport`, `display/window/stretch/scale_mode = "integer"` and
+the Nearest default texture filter instead.
+
 ## Performance Checklist
 
 ### Before Release
 
-- [ ] Profile the release build (not debug)
+- [ ] Profile a debug build on the target device, then confirm frame times in the release build
 - [ ] Check FPS stays above 30 (60 ideal) on target hardware
 - [ ] Verify memory usage stays within device limits
-- [ ] Test on lowest-spec target device
-- [ ] Check for GC spikes (>1ms pauses)
-- [ ] Verify texture compression is enabled
+- [ ] Test on the lowest-spec target device
+- [ ] Check for frame-time spikes (C# garbage collection, loading on the main thread)
+- [ ] Verify VRAM texture compression is enabled
 - [ ] Reduce draw calls with instancing
 - [ ] Use lightmaps for static scenes
 - [ ] Implement object pooling for frequently spawned entities
@@ -301,23 +296,14 @@ func get_viewport_scale() -> int:
 
 ```gdscript
 # Add to debug HUD
-class_name PerfHUD extends CanvasLayer
+class_name PerfHUD
+extends CanvasLayer
 
-@onready var fps_label = $FPSLabel
-@onready var mem_label = $MemLabel
+@onready var fps_label: Label = $FPSLabel
+@onready var mem_label: Label = $MemLabel
 
-func _process(delta):
-    fps_label.text = "FPS: " + str(Performance.get_monitor(Performance.TIME_FPS))
-    mem_label.text = "Mem: " + str(Performance.get_monitor(Performance.MEMORY_STATIC) / 1024 / 1024) + " MB"
+
+func _process(_delta: float) -> void:
+    fps_label.text = "FPS: %d" % Performance.get_monitor(Performance.TIME_FPS)
+    mem_label.text = "Mem: %.1f MB" % (Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0)
 ```
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools enhance performance debugging:
-
-- **`profiler_start`** — Start a profiling session from the editor
-- **`profiler_stop`** — Stop and display results
-- **`memory_stats`** — View current memory allocation breakdown
-- **`render_stats`** — Query draw calls, triangles, and active textures
-- **`perfetto_export`** — Export Perfetto trace for Android debugging
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.

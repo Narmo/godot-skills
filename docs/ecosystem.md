@@ -1,62 +1,45 @@
 # Godot Ecosystem Integrations
 
-This document covers notable tools, plugins, and integrations in the Godot ecosystem. Use it to understand how godot-skills complements existing community resources.
+This document covers notable tools, plugins, and integrations in the Godot ecosystem. Use it to understand how godot-skills complements existing community resources. Links were checked on 2026-11-19.
 
 ## Table of Contents
 
-- [Godot AssetLib Plugins](#godot-assetlib-plugins)
-- [GDExtension Patterns](#gdextension-patterns)
+- [Plugins and Add-ons](#plugins-and-add-ons)
+- [GDExtension](#gdextension)
 - [Import Tools](#import-tools)
 - [Audio Tools](#audio-tools)
 - [Community Resources](#community-resources)
-- [When to Use GDScript vs C++ vs C#](#when-to-use-gdscript-vs-c--vs-c)
+- [When to Use GDScript vs C# vs GDExtension](#when-to-use-gdscript-vs-c-vs-gdextension)
 
 ---
 
-## Godot AssetLib Plugins
+## Plugins and Add-ons
 
-### Scene Management
 | Plugin | Purpose | When to Use |
 |--------|---------|-------------|
-| [DynamicSceneLoader](https://github.com/nathanhoad/godot_dynamic_scene_loader) | Async scene loading with progress bars | Large open-world games, level transitions |
-| [SceneTreeEditor](https://github.com/Calinou/godot-scene-tree-editor) | Enhanced scene tree visualization | Complex scene hierarchies |
+| [imgui-godot](https://github.com/pkdawson/imgui-godot) | Dear ImGui integration | Debug overlays, rapid prototyping |
+| [Aseprite Wizard](https://github.com/viniciusgerevini/godot-aseprite-wizard) | Imports Aseprite files as sprite frames and animations | 2D pixel-art pipelines |
+| [YATI](https://github.com/Kiamo2/YATI) | Imports Tiled maps (`.tmx`, `.tsx`) into TileMapLayer | Levels authored in Tiled |
 
-### UI/UX
-| Plugin | Purpose | When to Use |
-|--------|---------|-------------|
-| [ControlNodeEditor](https://github.com/nathanhoad/godot_control_node_editor) | Visual UI layout editor extensions | Complex HUD design |
-| [Godot ImGui](https://github.com/eliasdaler/imgui-godot) | Dear ImGui integration | Debug overlays, rapid prototyping |
-
-### Debugging & Profiling
-| Plugin | Purpose | When to Use |
-|--------|---------|-------------|
-| [GDScript Debugger](https://github.com/godot-jolt/godot-jolt) | Enhanced debugger for GDScript | Complex logic debugging |
-| [Memory Profiler](https://github.com/Calinou/godot-memory-profiler) | Detailed memory usage tracking | Memory leak detection |
-
-### Networking
-| Plugin | Purpose | When to Use |
-|--------|---------|-------------|
-| [Godot Multiplayer Spawner](https://github.com/nathanhoad/godot_multiplayer_spawner) | Networked entity spawning | Multiplayer games with dynamic entities |
-| [Netcode IO](https://github.com/netcode-io/netcode.io) | Datagram-based networking library | Custom network protocols |
+Browse the [Godot Asset Library](https://godotengine.org/asset-library/asset) for more.
 
 ---
 
-## GDExtension Patterns
+## GDExtension
 
 ### When to Use GDExtension
 
-Use GDExtension (C++/Rust/Swift bindings) when:
+Use GDExtension (C++/Rust bindings) when:
 - Performance-critical code exceeds GDScript/C# limits
 - Reusing existing C++ libraries (physics, AI, math)
 - Distributing compiled modules without source exposure
 
-### Popular GDExtension Libraries
+### Libraries
 
 | Library | Language | Purpose |
 |---------|----------|---------|
-| [godot-cpp](https://github.com/godotengine/godot-cpp) | C++ | Official GDExtension C++ template |
-| [godot-rust](https://github.com/godot-rust/gdext) | Rust | Safe GDExtension with Rust bindings |
-| [bevy_godot](https://github.com/starfrozen/bevy_godot) | Rust | Bevy ECS integration with Godot |
+| [godot-cpp](https://github.com/godotengine/godot-cpp) | C++ | Official GDExtension C++ bindings |
+| [godot-rust (gdext)](https://github.com/godot-rust/gdext) | Rust | Rust bindings for GDExtension |
 
 ### GDExtension vs GDScript Decision Matrix
 
@@ -65,7 +48,7 @@ Performance-critical? ──Yes──► Use GDExtension (C++/Rust)
         │
         No
         │
-Needs .NET ecosystem? ──Yes──► Use C# Mono
+Needs .NET ecosystem? ──Yes──► Use C#
         │
         No
         │
@@ -79,22 +62,15 @@ Default: Use GDScript
 ### 2D Art
 | Tool | Format | Integration |
 |------|--------|-------------|
-| [Aseprite Importer](https://github.com/whitesmith/godot-aseprite) | `.ase`, `.aseprite` | Automatic sprite sheet + animation import |
-| [Tiled Map Editor](https://github.com/mapeditor/tiled) | `.tmx`, `.tsx` | Built-in TileMapLayer support (Godot 4.x) |
-| [GIMP/Inkscape](https://www.gimp.org/) | `.png`, `.svg` | Direct import, no plugin needed |
+| [Aseprite](https://github.com/viniciusgerevini/godot-aseprite-wizard) | `.ase`, `.aseprite` | Through the Aseprite Wizard add-on |
+| [Tiled Map Editor](https://github.com/mapeditor/tiled) | `.tmx`, `.tsx` | Needs an importer add-on such as YATI |
+| [GIMP](https://www.gimp.org/) / Inkscape | `.png`, `.svg` | Direct import, no plugin needed |
 
 ### 3D Art
 | Tool | Format | Integration |
 |------|--------|-------------|
-| [Blender Godot Exporter](https://github.com/godot-asset-library/blender-export-godot) | `.glb`, `.gltf` | Scene + animation export with bone mapping |
-| [MagicaVoxel](https://konimix.com/w/magicavoxel/) | `.obj` | Voxel art → Godot static geometry |
-
-### Audio
-| Tool | Format | Integration |
-|------|--------|-------------|
-| [Bfxr](https://www.bfxr.net/) | `.wav` | Retro sound effect generation |
-| [FMod Studio](https://www.fmod.com/) | `.fsb` | Advanced audio middleware (commercial) |
-| [Wwise](https://www.audiokinetic.com/) | `.wem` | Professional audio engine (commercial) |
+| Blender | `.blend`, `.glb`, `.gltf` | Godot imports `.blend` directly when Blender is installed ([available formats](https://docs.godotengine.org/en/stable/tutorials/assets_pipeline/importing_3d_scenes/available_formats.html)) |
+| [MagicaVoxel](https://ephtracy.github.io/) | `.obj` | Voxel art → Godot static geometry |
 
 ---
 
@@ -103,18 +79,20 @@ Default: Use GDScript
 ### Built-in Godot Audio
 
 Godot 4.x includes:
-- `AudioStreamPlayer2D/3D` for positional audio
+- `AudioStreamPlayer`, `AudioStreamPlayer2D`, `AudioStreamPlayer3D` for plain and positional audio
 - `AudioBusLayout` for mixer channels
-- `AudioEffect` nodes for real-time processing
+- `AudioEffect` resources on buses for real-time processing
 - `AudioStreamRandomizer` for variation
 
 ### External Tools
 
 | Tool | Purpose | When to Use |
 |------|---------|-------------|
-| [Bfxr](https://www.bfxr.net/) | Procedural SFX generation | Quick prototyping, retro games |
-| [Chiptone](https://github.com/3rdpoint/chiptone) | Chiptune synthesis | 8-bit style music |
+| [Bfxr](https://www.bfxr.net/) | Procedural SFX generation (`.wav`) | Quick prototyping, retro games |
+| [ChipTone](https://sfbgames.itch.io/chiptone) | Chiptune sound effects | 8-bit style audio |
 | [Audacity](https://audacityteam.org/) | Audio editing | Cleanup, mixing, format conversion |
+| [FMOD](https://www.fmod.com/) | Audio middleware (commercial) | Needs a third-party Godot integration |
+| [Wwise](https://www.audiokinetic.com/) | Audio middleware (commercial) | Needs a third-party Godot integration |
 
 ---
 
@@ -122,24 +100,22 @@ Godot 4.x includes:
 
 ### Documentation & Learning
 - [Official Godot Docs](https://docs.godotengine.org/) — Primary reference
-- [Godot Recipies](https://godotrecipes.com/) — Practical code examples
+- [Godot Recipes](https://kidscancode.org/godot_recipes/) — Practical code examples
 - [KidsCanCode](https://kidscancode.org/) — Tutorials for beginners
-- [Godot Quests](https://godotquests.com/) — Interactive learning
 
 ### Community Platforms
-- [Godot Forums](https://forum.godotengine.org/) — Q&A and discussions
+- [Godot Forum](https://forum.godotengine.org/) — Q&A and discussions
 - [Godot Discord](https://discord.gg/godot) — Real-time chat
 - [r/godot](https://www.reddit.com/r/godot/) — Community news and showcases
-- [GitHub Discussions](https://github.com/godotengine/godot/discussions) — Engine development
 
 ### Asset Sources
-- [Godot AssetLib](https://godotengine.org/asset-library/asset) — Official plugin/asset library
+- [Godot Asset Library](https://godotengine.org/asset-library/asset) — Official plugin/asset library
 - [OpenGameArt](https://opengameart.org/) — Free game assets
-- [Kenney.nl](https://kenney.nl/assets) — CC0 game assets
+- [Kenney](https://kenney.nl/assets) — CC0 game assets
 
 ---
 
-## When to Use GDScript vs C++ vs C#
+## When to Use GDScript vs C# vs GDExtension
 
 ### GDScript (Default)
 **Use when:** Game logic, UI, animations, most gameplay code
@@ -148,31 +124,31 @@ Godot 4.x includes:
 - Readable, concise syntax
 - Hot-reload in editor
 
-### C# Mono
+### C#
 **Use when:** Complex algorithms, .NET ecosystem needs, team with C# experience
-- Full .NET Standard 2.1 support
+- Modern .NET (install the SDK version your Godot release requires)
 - NuGet package access
 - Strong typing and tooling (Visual Studio, Rider)
-- See [godot-csharp-patterns](../skills/godot-csharp-patterns/SKILL.md) skill
+- See the [godot-csharp-patterns](../skills/godot-csharp-patterns/SKILL.md) skill
 
 ### GDExtension (C++/Rust)
 **Use when:** Performance-critical paths, existing C++ libraries, distribution without source
 - Near-native performance
 - Reuse existing C++ codebases
 - Cross-language interop
-- See [GDExtension docs](https://docs.godotengine.org/en/stable/tutorials/scripting/gdextension.html)
+- See the [GDExtension C++ example](https://docs.godotengine.org/en/stable/tutorials/scripting/cpp/gdextension_cpp_example.html)
 
 ---
 
 ## Compatibility Notes
 
-This ecosystem guide covers tools compatible with **Godot 4.x**. Some plugins may require specific versions:
+This guide covers tools compatible with **Godot 4.x**. Some need a matching plugin or version:
 
-| Tool | Min Godot Version | Notes |
-|------|-------------------|-------|
-| Aseprite Importer | 4.0+ | Requires `godot-aseprite` plugin |
-| Tiled (.tmx) | 4.0+ | Built-in TileMapLayer support |
-| godot-cpp | 4.0+ | Match GDExtension version to Godot minor |
-| FMod/Wwise | 4.0+ | Commercial licenses required |
+| Tool | Notes |
+|------|-------|
+| Aseprite | Requires the Aseprite Wizard add-on |
+| Tiled (`.tmx`) | Requires an importer add-on (e.g., YATI) |
+| godot-cpp | Match the godot-cpp branch to your Godot minor version |
+| FMOD/Wwise | Commercial licenses and a third-party integration required |
 
-**Last updated:** 2026-06-21
+**Last updated:** 2026-11-19

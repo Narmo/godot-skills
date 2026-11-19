@@ -98,35 +98,49 @@ script to instantiate.
 ### Save Manager
 
 ```gdscript
-class_name SaveManager extends Node
+class_name SaveManager
+extends Node
 
 const SAVE_PATH := "user://savegame.save"
 
-func save(data: SaveData) -> Error:
+
+func save_game(data: SaveData) -> Error:
     data.timestamp = Time.get_unix_time_from_system()
-    var file = FileAccess.open(SAVE_PATH, FileAccess.WRITE)
-    if not file:
-        push_error("SaveManager: Failed to save — %d" % FileAccess.get_open_error())
-        return Error.ERR_FILE_CANT_OPEN
+    # Write to a temporary file first, then swap it in: a crash mid-write
+    # leaves the previous save intact instead of a half-written one.
+    var tmp_path := SAVE_PATH + ".tmp"
+    var file := FileAccess.open(tmp_path, FileAccess.WRITE)
+    if file == null:
+        push_error("SaveManager: Failed to save — %s" % error_string(FileAccess.get_open_error()))
+        return ERR_FILE_CANT_OPEN
     # allow_objects stays off: only built-in types cross this boundary
     file.store_var(data.to_dict(), false)
-    return Error.OK
+    file.close()
+    return DirAccess.rename_absolute(tmp_path, SAVE_PATH)
 
-func load() -> SaveData:
-    if not FileAccess.file_exists(SAVE_PATH):
-        return null
-    var file = FileAccess.open(SAVE_PATH, FileAccess.READ)
-    if not file:
-        push_error("SaveManager: Failed to load save file")
-        return null
-    var raw = file.get_var(false)
+
+func load_game() -> SaveData:
+    var raw := read_raw(SAVE_PATH)
+    return SaveData.from_dict(migrate(raw)) if not raw.is_empty() else null
+
+
+func read_raw(path: String) -> Dictionary:
+    if not FileAccess.file_exists(path):
+        return {}
+    var file := FileAccess.open(path, FileAccess.READ)
+    if file == null:
+        push_error("SaveManager: Failed to open %s" % path)
+        return {}
+    var raw: Variant = file.get_var(false)
     if raw is not Dictionary:
-        push_error("SaveManager: Save file is malformed")
-        return null
-    return SaveData.from_dict(raw)
+        push_error("SaveManager: %s is malformed" % path)
+        return {}
+    return raw
 
-func delete() -> void:
+
+func delete_game() -> void:
     DirAccess.remove_absolute(SAVE_PATH)
+
 
 func has_save() -> bool:
     return FileAccess.file_exists(SAVE_PATH)
@@ -136,77 +150,80 @@ func has_save() -> bool:
 malicious save can then only produce wrong *data*, never running code. Treat every
 field as untrusted input and clamp it in `from_dict()`.
 
+Don't name these methods `load()`/`save()`: `load()` would shadow the global function and
+every `load("res://...")` inside the class would call your method instead.
+
 ### Multiple Save Slots
 
 ```gdscript
 func get_slot_path(slot_index: int) -> String:
     return "user://savegame_%d.save" % slot_index
 
-# Save slot metadata for UI display
-class_name SlotInfo extends Resource
-    @export var slot_index: int = 0
-    @export var timestamp: float = 0.0
-    @export var player_level: int = 1
-    @export var thumbnail: Texture2D = null
+
+# Slot metadata for the load menu, stored next to each save as plain data.
+# Keep a thumbnail as a PNG file (Image.save_png) rather than a Texture2D in the save.
+func write_slot_info(slot_index: int, player_level: int) -> void:
+    var info := {
+        "slot_index": slot_index,
+        "timestamp": Time.get_unix_time_from_system(),
+        "player_level": player_level,
+        "thumbnail_path": "user://slot_%d.png" % slot_index,
+    }
+    var file := FileAccess.open("user://slot_%d.info" % slot_index, FileAccess.WRITE)
+    if file:
+        file.store_var(info, false)
 ```
 
 ## JSON Serialization
 
-For human-readable saves or cross-platform data exchange:
+For human-readable saves or cross-platform data exchange. JSON only knows strings, numbers,
+booleans, arrays and objects, so convert Godot types yourself:
 
 ```gdscript
 func save_as_json(data: SaveData, path: String) -> Error:
-    var dict := {
-        "version": data.save_version,
-        "timestamp": data.timestamp,
-        "position": { "x": data.player_position.x, "y": data.player_position.y },
-        "health": data.player_health,
-        "inventory": [],
-        "quests": data.quest_flags
-    }
-    var json = JSON.stringify(dict)
-    var file = FileAccess.open(path, FileAccess.WRITE)
-    if not file:
-        return Error.ERR_FILE_CANT_OPEN
-    file.store_string(json)
-    return Error.OK
+    var dict := data.to_dict()
+    dict["player_position"] = [data.player_position.x, data.player_position.y]
+    var file := FileAccess.open(path, FileAccess.WRITE)
+    if file == null:
+        return ERR_FILE_CANT_OPEN
+    file.store_string(JSON.stringify(dict, "  "))
+    return OK
+
 
 func load_from_json(path: String) -> SaveData:
-    var file = FileAccess.open(path, FileAccess.READ)
-    if not file:
+    if not FileAccess.file_exists(path):
         return null
-    var json_str = file.get_as_text()
-    var parse_result = JSON.parse_string(json_str)
-    if parse_result is Dictionary:
-        return _dict_to_save_data(parse_result as Dictionary)
-    return null
+    var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+    if parsed is not Dictionary:
+        return null
+    var dict: Dictionary = parsed
+    var pos: Variant = dict.get("player_position")
+    if pos is Array and pos.size() == 2:
+        dict["player_position"] = Vector2(float(pos[0]), float(pos[1]))
+    return SaveData.from_dict(dict)  # numbers come back as floats; from_dict converts them
 ```
+
+`JSON.from_native()` / `JSON.to_native()` (Godot 4.4+) round-trip Godot types automatically,
+at the cost of a less readable file.
 
 ## Versioning and Migration
 
-Handle save format changes across game updates:
+Migrate the raw dictionary before turning it into `SaveData`, one version step at a time:
 
 ```gdscript
-func load_migrated() -> SaveData:
-    var raw = load()
-    if not raw:
-        return null
-
-    # Migrate older save formats to current version
-    while raw.save_version < SaveData.SAVE_VERSION:
-        raw = _migrate(raw, raw.save_version)
-
+func migrate(raw: Dictionary) -> Dictionary:
+    var version := int(raw.get("save_version", 0))
+    while version < SaveData.SAVE_VERSION:
+        match version:
+            0:
+                # v0 → v1: quest flags were added
+                raw["quest_flags"] = {}
+            _:
+                push_warning("SaveManager: No migration from v%d" % version)
+                break
+        version += 1
+        raw["save_version"] = version
     return raw
-
-func _migrate(data: SaveData, from_version: int) -> SaveData:
-    match from_version:
-        0:
-            # v0 → v1: add quest_flags field
-            data.quest_flags = {}
-            data.save_version = 1
-        _:
-            push_warning("SaveManager: Unknown migration from v%d" % from_version)
-    return data
 ```
 
 ## Corruption Recovery
@@ -214,36 +231,35 @@ func _migrate(data: SaveData, from_version: int) -> SaveData:
 Protect against corrupted save files:
 
 ```gdscript
-func load_safe() -> SaveData:
-    var data = load()
-    if data and _validate(data):
-        return data
+const BACKUP_PATH := SAVE_PATH + ".bak"
 
-    # Try backup
-    if FileAccess.file_exists(SAVE_PATH + ".bak"):
+
+func load_safe() -> SaveData:
+    var raw := read_raw(SAVE_PATH)
+    if _validate(raw):
+        return SaveData.from_dict(migrate(raw))
+
+    var backup := read_raw(BACKUP_PATH)
+    if _validate(backup):
         push_warning("SaveManager: Primary save corrupted, loading backup")
-        var temp = SAVE_PATH
-        OS.move_to_trash(SAVE_PATH)  # Move corrupted file
-        DirAccess.copy_absolute(SAVE_PATH + ".bak", SAVE_PATH)
-        return load()
+        # Keep the broken file for bug reports instead of deleting it
+        DirAccess.rename_absolute(SAVE_PATH, SAVE_PATH + ".corrupt")
+        DirAccess.copy_absolute(BACKUP_PATH, SAVE_PATH)
+        return SaveData.from_dict(migrate(backup))
 
     push_error("SaveManager: No valid save found")
     return null
 
-func _validate(data: SaveData) -> bool:
-    if not data:
-        return false
-    if data.save_version < 1:
-        return false
-    # Add more validation checks
-    return true
 
-# Create backup on successful save
+func _validate(raw: Dictionary) -> bool:
+    return not raw.is_empty() and raw.has("save_version") and raw.has("player_health")
+
+
+# Create a backup of the last good save before overwriting it
 func save_with_backup(data: SaveData) -> Error:
-    # Backup current save
     if FileAccess.file_exists(SAVE_PATH):
-        DirAccess.copy_absolute(SAVE_PATH, SAVE_PATH + ".bak")
-    return save(data)
+        DirAccess.copy_absolute(SAVE_PATH, BACKUP_PATH)
+    return save_game(data)
 ```
 
 ## Cloud Save Integration Pattern
@@ -252,33 +268,46 @@ A downloaded save is attacker-controlled input: it crossed a network you do not
 control. Parse it with the same object-free loader used for local saves, and
 validate before applying. Never hand a downloaded blob to `ResourceLoader`.
 
-Abstract cloud provider behind an interface:
+Abstract the cloud provider behind a base class (GDScript has no interfaces, so the base
+methods report that they must be overridden):
 
-```gdot
-class_name CloudSaveProvider extends RefCounted
+```gdscript
+class_name CloudSaveProvider
+extends RefCounted
 
-virtual func upload(data: String, key: String) -> bool:
+
+func upload(_data: PackedByteArray, _key: String) -> bool:
+    push_error("CloudSaveProvider.upload() must be overridden")
     return false
 
-virtual func download(key: String) -> String:
-    return ""
 
-virtual func delete(key: String) -> bool:
+func download(_key: String) -> PackedByteArray:
+    push_error("CloudSaveProvider.download() must be overridden")
+    return PackedByteArray()
+
+
+func delete(_key: String) -> bool:
+    push_error("CloudSaveProvider.delete() must be overridden")
     return false
 
-# Usage: implement concrete providers
+# Concrete providers extend it:
 # class_name GooglePlaySaveProvider extends CloudSaveProvider
-# class_name AppleCloudSaveProvider extends CloudSaveProvider
 ```
+
+Decode a download with `bytes_to_var(bytes)` — never `bytes_to_var_with_objects()` — and
+validate it like a local save.
 
 ## Auto-Save Strategies
 
 ```gdscript
-class_name AutoSaver extends Node
+class_name AutoSaver
+extends Node
 
 @export var interval_seconds: float = 30.0
+@export var save_manager: SaveManager
+
 var _timer: Timer
-var _save_manager: SaveManager
+
 
 func _ready() -> void:
     _timer = Timer.new()
@@ -287,21 +316,18 @@ func _ready() -> void:
     add_child(_timer)
     _timer.start()
 
+
 func _on_auto_save() -> void:
-    var data = _build_save_data()
-    _save_manager.save(data)
+    save_manager.save_game(build_save_data())
+
+
+func build_save_data() -> SaveData:
+    var data := SaveData.new()
+    # Fill from the current game state here
+    return data
 ```
 
-## Godot 4.7 Save Notes
+## Notes
 
 - **ResourceSaver/ResourceLoader** are for authored `res://` content, not player saves
-- **ConfigFile** — Use for settings/preferences (separate from game saves)
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools can inspect and modify your project live:
-
-- **`script_read`** / **`script_edit`** — Read and modify save system scripts
-- **`project_info`** — Check user:// directory paths for save location debugging
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.
+- **ConfigFile** — use for settings and preferences, kept separate from game saves

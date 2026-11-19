@@ -101,25 +101,29 @@ margin.add_child(content_panel)
 
 ### Center Container
 
-Center a child node within its parent.
+Center a child node within its parent. CenterContainer centers its children automatically;
+there is nothing to configure except `use_top_left`.
 
 ```gdscript
-var center = CenterContainer.new()
-center.horizontal_alignment = CenterContainer.ALIGNMENT_CENTER
-center.vertical_alignment = CenterContainer.ALIGNMENT_MIDDLE
+var center := CenterContainer.new()
+center.set_anchors_preset(Control.PRESET_FULL_RECT)
 center.add_child(dialog_panel)
 ```
 
 ### Fill and Expand
 
-```gdscript
-# Fill available space
-button.expand_mode = Button.BUTTON_EXPAND_FILL  # Fill width and height
-button.expand_mode = Button.BUTTON_EXPAND       # Fill width only
+Inside containers, size flags decide how much space a child takes:
 
-# Control fills parent rect
-control.size_flags_horizontal = Control.SIZE_FILL
-control.size_flags_vertical = Control.SIZE_FILL
+```gdscript
+# Take a share of the free space and fill it
+button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+
+# Fill the cell but don't ask for extra space
+label.size_flags_horizontal = Control.SIZE_FILL
+
+# Weight the share of free space between expanding siblings
+sidebar.size_flags_stretch_ratio = 1.0
+content.size_flags_stretch_ratio = 3.0
 ```
 ## Theme Resources and Custom Styles
 
@@ -127,27 +131,25 @@ control.size_flags_vertical = Control.SIZE_FILL
 
 ```gdscript
 # Create theme in code
-var theme = Theme.new()
+var theme := Theme.new()
 
-# Custom font
-var custom_font = FontFile.new()
-custom_font.font_data = load("res://fonts/my_font.tres")
-theme.add_font("Default", "Source", custom_font)
+# Default font for every control using this theme
+theme.default_font = load("res://fonts/my_font.ttf")  # .ttf/.otf import as FontFile
 theme.default_font_size = 16
 
 # Custom button style
-var normal_style = StyleBoxTexture.new()
+var normal_style := StyleBoxTexture.new()
 normal_style.texture = load("res://ui/button_normal.png")
-normal_style.set_margin_left(8)
-normal_style.set_margin_right(8)
-normal_style.set_margin_top(4)
-normal_style.set_margin_bottom(4)
+normal_style.texture_margin_left = 8
+normal_style.texture_margin_right = 8
+normal_style.texture_margin_top = 4
+normal_style.texture_margin_bottom = 4
 
-var hover_style = normal_style.duplicate()
-hover_style.modulate = Color(1.2, 1.2, 1.2)  # Lighter on hover
+var hover_style: StyleBoxTexture = normal_style.duplicate()
+hover_style.modulate_color = Color(1.2, 1.2, 1.2)  # Lighter on hover
 
-theme.add_stylebox("normal", "Button", normal_style)
-theme.add_stylebox("hover", "Button", hover_style)
+theme.set_stylebox("normal", "Button", normal_style)
+theme.set_stylebox("hover", "Button", hover_style)
 ```
 
 ### Theme Overrides per Control
@@ -178,21 +180,33 @@ func create_primary_button(text: String) -> Button:
 ```
 ## RichTextLabel Formatting and Image Sizing
 
-### RichTextEffect Custom Tags
+### BBCode and Custom Effects
 
-Godot 4.x supports custom rich text effects.
+BBCode needs `bbcode_enabled = true`. Custom tags come from `RichTextEffect` scripts:
 
 ```gdscript
-# Use built-in BBCode tags in RichTextLabel
+rich_text_label.bbcode_enabled = true
 rich_text_label.text = "[color=red]Alert![/color] Health is low."
 rich_text_label.text = "[b]Bold[/b] and [i]italic[/i] text"
 rich_text_label.text = "[img=64]res://icons/heart.png[/img] 10/20 HP"
-
-# Custom effect for damage numbers
-func _process(delta: float):
-    # RichTextLabel processes BBCode every frame
-    # For performance, cache formatted text when possible
 ```
+
+```gdscript
+# rich_text_shake.gd — use as [shake strength=4]Hit![/shake]
+@tool
+class_name RichTextShake
+extends RichTextEffect
+
+var bbcode := "shake"
+
+
+func _process_custom_fx(char_fx: CharFXTransform) -> bool:
+	var strength: float = char_fx.env.get("strength", 2.0)
+	char_fx.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * strength
+	return true
+```
+
+Register it once with `rich_text_label.install_effect(RichTextShake.new())`.
 
 ### Image Sizing in RichTextLabel
 
@@ -203,51 +217,54 @@ rich_text_label.text = "[img=32]res://icons/coin.png[/img] [img=32]res://icons/c
 # Scale by font size
 rich_text_label.text = "[font_size=48][img=48]res://icons/star.png[/img][/font_size]"
 
-# Responsive sizing using theme font
+# Size icons from the font the label actually uses
 func get_icon_size() -> int:
-    return ThemeDB.get_font("Default").get_height() * 2
+    var font := rich_text_label.get_theme_font("normal_font")
+    var font_size := rich_text_label.get_theme_font_size("normal_font_size")
+    return int(font.get_height(font_size))
 ```
 ## Godot 4.7 UI Features
 
 ### PopupMenu Search (Godot 4.7)
 
-Godot 4.7 adds search/filtering to PopupMenu for better UX in large menus.
+PopupMenu can show a search bar at the top, which filters long menus and works on touchscreens.
 
 ```gdscript
-# The PopupMenu now supports search filtering out of the box
-# Connect the search_changed signal for custom filtering
-@onready var popup_menu = $PopupMenu
-@onready var search_line_edit = $SearchField
+@onready var popup_menu: PopupMenu = $PopupMenu
 
-func _ready():
-    search_line_edit.text_changed.connect(_on_search_changed)
-    popup_menu.index_pressed.connect(_on_menu_selected)
 
-func _on_search_changed(query: String):
-    # Filter menu items based on search query
-    for i in range(popup_menu.item_count):
-        var item_text = popup_menu.get_item_text(i)
-        popup_menu.set_item_hidden(i, not item_text.containsn(query))
+func _ready() -> void:
+	popup_menu.search_bar_enabled = true
+	popup_menu.search_bar_min_item_count = 10  # only for long menus
+	popup_menu.search_bar_fuzzy_search_enabled = true
+	popup_menu.index_pressed.connect(_on_menu_selected)
+
+
+func _on_menu_selected(index: int) -> void:
+	print("Selected: ", popup_menu.get_item_text(index))
 ```
 
 ### Control Offset Transforms (Godot 4.7)
 
-Godot 4.7 allows animating control offsets directly for smooth UI transitions.
+`offset_transform_*` properties move, scale and rotate a Control on top of its layout, so a
+panel inside a container can slide or pop without fighting the container.
 
 ```gdscript
-# Animate panel sliding in using offset transforms
-func slide_in(panel: Control):
-    panel.offset_left = -300  # Start off-screen
-    var tween = create_tween()
-    tween.tween_property(panel, "offset_left", 0, 0.3)
-    tween.set_ease(Tween.EASE_OUT)
+func slide_in(panel: Control) -> void:
+	panel.offset_transform_enabled = true
+	panel.offset_transform_position = Vector2(-300.0, 0.0)  # start off-screen
+	var tween := create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	tween.tween_property(panel, "offset_transform_position", Vector2.ZERO, 0.3)
 
-func slide_out(panel: Control):
-    var tween = create_tween()
-    tween.tween_property(panel, "offset_left", -300, 0.25)
-    tween.connect("finished", panel.queue_free)
 
-# Use for: sliding menus, notifications, dialog entrances
+func pop(button: Control) -> void:
+	button.offset_transform_enabled = true
+	button.offset_transform_pivot_ratio = Vector2(0.5, 0.5)  # scale around the center
+	var tween := create_tween()
+	tween.tween_property(button, "offset_transform_scale", Vector2(1.1, 1.1), 0.08)
+	tween.tween_property(button, "offset_transform_scale", Vector2.ONE, 0.12)
+
+# Use for: sliding menus, notifications, button feedback inside containers
 ```
 ## UI Performance Tips
 
@@ -256,7 +273,7 @@ func slide_out(panel: Control):
 - Cache `RichTextLabel` formatted text when content does not change
 - Use `TextureRect` with `STRETCH_SCALE` for responsive images
 - Avoid creating/destroying UI nodes every frame — use pooling instead
-- Set `visible_ratio` to 0 on off-screen panels instead of queue_free()
+- Hide off-screen panels with `visible = false` instead of freeing and re-creating them
 
 ## Quick Reference: Container Nodes
 
@@ -270,14 +287,3 @@ func slide_out(panel: Control):
 | `ScrollContainer` | Scrollable area |
 | `AspectRatioContainer` | Fixed aspect ratio |
 | `Control` (root) | Full rect anchor |
-
-## MCP Bridge Tools (Optional — Live Editor Integration)
-
-When the MCP bridge is running (Phase 2), these tools enhance UI debugging:
-
-- **`ui_inspect`** — Inspect the current control tree and their properties
-- **`ui_preview_theme`** — Preview theme changes in real-time
-- **`ui_resize_preview`** — Test responsive layouts at different screen sizes
-- **`ui_find_control`** — Find controls by path or name in the scene tree
-
-> **Note:** MCP tools require the Godot editor to be running with the MCP plugin enabled. Skills work independently without the bridge.

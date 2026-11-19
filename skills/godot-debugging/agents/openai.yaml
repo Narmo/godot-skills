@@ -1,13 +1,10 @@
 # OpenAI / Codex CLI extension for godot-debugging
 # Safely ignored by other agents per Agent Skills Open Standard
+# Codex reads interface (UI metadata), policy and dependencies from this file.
+
+interface:
+  display_name: "Godot Debugging"
+  short_description: "Debugging workflow for Godot 4.x"
 
 policy:
-  safe: true
-  no_network: true
-
-when_to_use:
-  - "debugging Godot errors"
-  - "profiling Godot performance"
-  - "resolving Godot crashes"
-  - "network debugging in Godot"
-  - "export build troubleshooting"
+  allow_implicit_invocation: true
