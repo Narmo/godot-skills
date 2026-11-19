@@ -9,6 +9,7 @@ See [docs/changelog-guide.md](docs/changelog-guide.md) for conventions.
 
 ### Added
 - `godot-headless-workflow` — Agent-first development loop: headless validation/import gates, gdUnit4 CLI testing, text-scene editing safety rules, CLI export pipeline with Android/iOS presets and signing env vars, store-submission checklist, and RevenueCat plugin integration playbook
+- `godot-pck-encryption` — Encrypted PCK exports: key handling, building export templates with `SCRIPT_AES256_ENCRYPTION_KEY` for every platform, preset encryption settings, filters that match the names Godot actually stores (`*.gd`/`*.tscn` encrypt nothing by default), CLI export with `GODOT_SCRIPT_ENCRYPTION_KEY`, template and PCK verification, and 4.7 error messages
 - `scripts/new-skill.sh` — Scaffold new skill directories from template
 - `docs/skill-template/` — Copy-paste skill template (SKILL.md, agents/, references/)
 - `docs/ecosystem.md` — Godot ecosystem integrations guide (20+ tools/plugins)

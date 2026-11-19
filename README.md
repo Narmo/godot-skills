@@ -33,6 +33,7 @@ pi install ./path/to/godot-skills -l
 | **godot-code-review** | Common pitfalls, performance checklist, code style guidelines, memory management, signal leak detection |
 | **godot-debugging** | Debugging workflow, common error patterns, profiling, network debugging, export/build troubleshooting |
 | **godot-headless-workflow** | AI-agent development loop without the editor: headless validation (`--check-only`), import gate, gdUnit4 testing, safe text-scene editing, CLI export pipeline (Android/iOS), mobile checklist, RevenueCat plugin integration |
+| **godot-pck-encryption** | PCK encryption: AES-256 key generation, custom export templates built with `SCRIPT_AES256_ENCRYPTION_KEY` per platform, encryption filters that match exported names (`.gdc`, `.scn`, `.ctex`), CLI export with `GODOT_SCRIPT_ENCRYPTION_KEY`, template/PCK verification, troubleshooting |
 | **godot-47-migration** | Step-by-step migration from Godot 4.x to 4.7: HDR, Steam Frame, AreaLight3D, VirtualJoystick, tween_await(), Perfetto tracing |
 | **godot-physics** | Physics systems: collision layers/masks, rigid body dynamics, character controllers (CharacterBody2D/3D), area triggers, physics interpolation |
 | **godot-animation** | Animation systems: AnimationPlayer vs AnimationTree, state machines, blend spaces (1D/2D/directional), root motion, tween_await() |

@@ -1,0 +1,15 @@
+# Claude Code extension for godot-pck-encryption
+# Safely ignored by other agents per Agent Skills Open Standard
+
+when_to_use:
+  - "encrypting a Godot export PCK"
+  - "compiling Godot export templates with an encryption key"
+  - "setting SCRIPT_AES256_ENCRYPTION_KEY or GODOT_SCRIPT_ENCRYPTION_KEY"
+  - "choosing Godot encryption include/exclude filters"
+  - "fixing 'MD5 sum of the decrypted file does not match' in a Godot export"
+
+tool_permissions:
+  - read
+  - bash
+  - edit
+  - write

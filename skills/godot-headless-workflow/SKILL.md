@@ -241,7 +241,8 @@ export GODOT_ANDROID_KEYSTORE_PASSWORD=secret
 ```
 
 Details, debugging exports (`--export-debug`), and the store-submission checklist live in
-`references/exporting.md`.
+`references/exporting.md`. Encrypted PCKs need custom-built export templates — see the
+`godot-pck-encryption` skill.
 
 ## Mobile Quick Checklist
 
